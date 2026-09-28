@@ -163,15 +163,17 @@ not from the error text, whether the objective was achieved.
 <!-- pgwarden:redteam:start -->
 | Category | Attacks | Blocked (oracle-verified) | Observed primary blocking layer |
 | --- | ---: | ---: | --- |
-| A. Stacked statements | 10 | 10 | protocol |
-| B. Writes on the read path | 14 | 14 | approval, privileges, protocol, read_only_transaction |
-| C. Privilege escalation | 10 | 10 | privileges, read_only_transaction |
-| D. Crossing RLS | 9 | 9 | rls |
-| E. Bypassing masking | 8 | 8 | masking_view, privileges |
-| F. Resource exhaustion | 8 | 8 | timeout_or_cap |
-| G. Canary exfiltration | 9 | 9 | privileges |
+| A. Stacked statements | 13 | 13 | protocol |
+| B. Writes on the read path | 18 | 18 | approval, privileges, protocol, read_only_transaction |
+| C. Privilege escalation | 13 | 13 | privileges, read_only_transaction, rls |
+| D. Crossing RLS | 12 | 12 | privileges, rls |
+| E. Bypassing masking | 11 | 11 | masking_view, privileges |
+| F. Resource exhaustion | 13 | 13 | rate_limit, timeout_or_cap |
+| G. Canary exfiltration | 11 | 11 | privileges |
+| H. Approval abuse | 20 | 20 | approval |
+| I. OAuth and session | 20 | 20 | oauth |
 
-Benign controls passed: 32 / 32. Documented residual risks: 3.
+Benign controls passed: 32 / 32. Documented residual risks: 4.
 <!-- pgwarden:redteam:end -->
 
 ### Statement-filter baselines
@@ -183,9 +185,9 @@ in `bench/`, never in the product — the evidence for
 <!-- pgwarden:baselines:start -->
 | Baseline | Attacks it would let through | Benign queries it would wrongly block |
 | --- | ---: | ---: |
-| keyword/regex blocklist | 39 / 66 | 3 / 29 |
-| sqlglot SELECT-only allowlist | 42 / 66 | 2 / 29 |
-| **pgwarden (database-enforced)** | **0 / 66** | **0 / 29** |
+| keyword/regex blocklist | 54 / 88 | 3 / 29 |
+| sqlglot SELECT-only allowlist | 54 / 88 | 2 / 29 |
+| **pgwarden (database-enforced)** | **0 / 88** | **0 / 29** |
 <!-- pgwarden:baselines:end -->
 
 ### Latency and load

@@ -2,13 +2,13 @@
   "command": "pgwarden redteam run",
   "date": "2026-09-28",
   "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
-  "git_commit": "78df55b",
+  "git_commit": "f7a676c",
   "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
-  "config_hash": "b5c902f5656f70cd",
+  "config_hash": null,
   "other_containers": null,
   "summary": {
-    "must_block_total": 68,
-    "must_block_blocked": 68,
+    "must_block_total": 131,
+    "must_block_blocked": 131,
     "benign_total": 32,
     "benign_passed": 32,
     "residual_risks": [
@@ -26,19 +26,24 @@
         "id": "E05",
         "title": "pg_stats.most_common_vals on a masked column",
         "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      },
+      {
+        "id": "G09",
+        "title": "pg_class table-name enumeration",
+        "detail": "residual risk (disclosure of data the person may read (relation names in pg_class)): the call returns data, as documented"
       }
     ],
     "by_category": {
       "A": {
-        "attacks": 10,
-        "blocked": 10,
+        "attacks": 13,
+        "blocked": 13,
         "layers": [
           "protocol"
         ]
       },
       "B": {
-        "attacks": 14,
-        "blocked": 14,
+        "attacks": 18,
+        "blocked": 18,
         "layers": [
           "approval",
           "privileges",
@@ -47,40 +52,57 @@
         ]
       },
       "C": {
-        "attacks": 10,
-        "blocked": 10,
+        "attacks": 13,
+        "blocked": 13,
         "layers": [
           "privileges",
-          "read_only_transaction"
+          "read_only_transaction",
+          "rls"
         ]
       },
       "D": {
-        "attacks": 9,
-        "blocked": 9,
+        "attacks": 12,
+        "blocked": 12,
         "layers": [
+          "privileges",
           "rls"
         ]
       },
       "E": {
-        "attacks": 8,
-        "blocked": 8,
+        "attacks": 11,
+        "blocked": 11,
         "layers": [
           "masking_view",
           "privileges"
         ]
       },
       "F": {
-        "attacks": 8,
-        "blocked": 8,
+        "attacks": 13,
+        "blocked": 13,
         "layers": [
+          "rate_limit",
           "timeout_or_cap"
         ]
       },
       "G": {
-        "attacks": 9,
-        "blocked": 9,
+        "attacks": 11,
+        "blocked": 11,
         "layers": [
           "privileges"
+        ]
+      },
+      "H": {
+        "attacks": 20,
+        "blocked": 20,
+        "layers": [
+          "approval"
+        ]
+      },
+      "I": {
+        "attacks": 20,
+        "blocked": 20,
+        "layers": [
+          "oauth"
         ]
       },
       "benign": {
@@ -160,7 +182,7 @@
       "expected_layer": "protocol",
       "observed_layer": "protocol",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "A08",
@@ -170,7 +192,7 @@
       "expected_layer": "protocol",
       "observed_layer": "protocol",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "A09",
@@ -180,7 +202,7 @@
       "expected_layer": "protocol",
       "observed_layer": "protocol",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "A10",
@@ -191,6 +213,36 @@
       "observed_layer": "protocol",
       "passed": true,
       "detail": "table_checksum_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "A11",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden after a decoy inside a line comment",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "A12",
+      "category": "A",
+      "kind": "attack",
+      "title": "END as the spelling of COMMIT before a second statement",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "A13",
+      "category": "A",
+      "kind": "attack",
+      "title": "second statement behind a bound parameter",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
     },
     {
       "id": "B01",
@@ -250,7 +302,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "B07",
@@ -300,7 +352,7 @@
       "expected_layer": "read_only_transaction",
       "observed_layer": "read_only_transaction",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "B12",
@@ -310,7 +362,7 @@
       "expected_layer": "read_only_transaction",
       "observed_layer": "read_only_transaction",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "B13",
@@ -333,6 +385,46 @@
       "detail": "proposal_state: proposal refused (rejected_by_validation)"
     },
     {
+      "id": "B15",
+      "category": "B",
+      "kind": "attack",
+      "title": "LOCK TABLE in ACCESS EXCLUSIVE mode",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "B16",
+      "category": "B",
+      "kind": "attack",
+      "title": "TRUNCATE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B17",
+      "category": "B",
+      "kind": "attack",
+      "title": "CREATE FUNCTION in the public schema",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "call_refused: the database refused the privileged call"
+    },
+    {
+      "id": "B18",
+      "category": "B",
+      "kind": "attack",
+      "title": "large object creation",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "call_refused: the database refused the privileged call"
+    },
+    {
       "id": "C01",
       "category": "C",
       "kind": "attack",
@@ -340,7 +432,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C02",
@@ -350,7 +442,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C03",
@@ -360,7 +452,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C04",
@@ -380,7 +472,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C06",
@@ -390,7 +482,7 @@
       "expected_layer": "read_only_transaction",
       "observed_layer": "read_only_transaction",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C07",
@@ -400,7 +492,7 @@
       "expected_layer": "read_only_transaction",
       "observed_layer": "read_only_transaction",
       "passed": true,
-      "detail": "role_unchanged: no foreign role in the response"
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "C08",
@@ -410,7 +502,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary or marker in the response; call_refused: the database refused the privileged call"
     },
     {
       "id": "C09",
@@ -420,17 +512,47 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "call_refused: the database refused the privileged call"
     },
     {
       "id": "C10",
       "category": "C",
       "kind": "attack",
       "title": "writer-role switch reaching beyond its own grants",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
+    },
+    {
+      "id": "C11",
+      "category": "C",
+      "kind": "attack",
+      "title": "COPY TO PROGRAM",
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "role_unchanged: the database refused the role change"
+    },
+    {
+      "id": "C12",
+      "category": "C",
+      "kind": "attack",
+      "title": "pg_reload_conf",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "call_refused: the database refused the privileged call"
+    },
+    {
+      "id": "C13",
+      "category": "C",
+      "kind": "attack",
+      "title": "session_replication_role to disable RLS-adjacent machinery",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: the database refused the role change"
     },
     {
       "id": "D01",
@@ -450,7 +572,7 @@
       "expected_layer": "rls",
       "observed_layer": "rls",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+      "detail": "response_excludes_canaries: no canary or marker in the response; response_excludes_foreign_rows: only region EU rows (or none)"
     },
     {
       "id": "D03",
@@ -470,7 +592,7 @@
       "expected_layer": "rls",
       "observed_layer": "rls",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response; foreign_rows: only region EU rows (or none)"
     },
     {
       "id": "D05",
@@ -490,7 +612,7 @@
       "expected_layer": "rls",
       "observed_layer": "rls",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region US rows (or none)"
+      "detail": "response_excludes_foreign_rows: only region US rows (or none)"
     },
     {
       "id": "D07",
@@ -510,7 +632,7 @@
       "expected_layer": "rls",
       "observed_layer": "rls",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+      "detail": "response_excludes_foreign_rows: only region EU rows (or none)"
     },
     {
       "id": "D09",
@@ -536,11 +658,41 @@
       "id": "D11",
       "category": "D",
       "kind": "attack",
-      "title": "machine identity with no region registered at all",
+      "title": "machine identity reading an RLS-protected table it has no grant on",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_foreign_rows: no rows returned"
+    },
+    {
+      "id": "D12",
+      "category": "D",
+      "kind": "attack",
+      "title": "switch row_security off inside the query",
       "expected_layer": "rls",
       "observed_layer": "rls",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: no rows returned"
+      "detail": "response_excludes_foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D13",
+      "category": "D",
+      "kind": "attack",
+      "title": "EXCEPT to reveal foreign ids by set difference",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D14",
+      "category": "D",
+      "kind": "attack",
+      "title": "LATERAL subquery aimed at another region",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_foreign_rows: only region US rows (or none)"
     },
     {
       "id": "E01",
@@ -550,7 +702,7 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E02",
@@ -560,7 +712,7 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E03",
@@ -570,7 +722,7 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E04",
@@ -580,7 +732,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E05",
@@ -600,7 +752,7 @@
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E07",
@@ -610,7 +762,7 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E08",
@@ -620,7 +772,7 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E09",
@@ -630,7 +782,37 @@
       "expected_layer": "masking_view",
       "observed_layer": "masking_view",
       "passed": true,
-      "detail": "response_excludes_canaries: no canary or marker in the response"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
+    },
+    {
+      "id": "E10",
+      "category": "E",
+      "kind": "attack",
+      "title": "whole-row cast to text",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
+    },
+    {
+      "id": "E11",
+      "category": "E",
+      "kind": "attack",
+      "title": "correlated scalar subquery for the masked column",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
+    },
+    {
+      "id": "E12",
+      "category": "E",
+      "kind": "attack",
+      "title": "string_agg over a masked column",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "F01",
@@ -640,7 +822,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5048 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5026 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F02",
@@ -650,7 +832,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5043 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5038 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F03",
@@ -660,7 +842,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5433 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5306 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F04",
@@ -670,7 +852,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 148 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 50 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F05",
@@ -680,7 +862,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5053 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5009 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F06",
@@ -690,17 +872,17 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 25 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 8 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F07",
       "category": "F",
       "kind": "attack",
-      "title": "one row of 100x max_response_bytes",
+      "title": "one row of 100x max_response_bytes assembled by an aggregate",
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 1182 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 1519 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F08",
@@ -711,6 +893,56 @@
       "observed_layer": "timeout_or_cap",
       "passed": true,
       "detail": "lock_released: advisory lock is free"
+    },
+    {
+      "id": "F09",
+      "category": "F",
+      "kind": "attack",
+      "title": "query rate flood",
+      "expected_layer": "rate_limit",
+      "observed_layer": "rate_limit",
+      "passed": true,
+      "detail": "gateway_healthy_after: gateway healthy after the attack; completes_within: completed in 7 ms"
+    },
+    {
+      "id": "F10",
+      "category": "F",
+      "kind": "attack",
+      "title": "unbounded recursive CTE",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5054 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F11",
+      "category": "F",
+      "kind": "attack",
+      "title": "many rows that are individually small but together exceed the byte cap",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 22 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F12",
+      "category": "F",
+      "kind": "attack",
+      "title": "per-row sleep summed over a generated series",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5018 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F13",
+      "category": "F",
+      "kind": "attack",
+      "title": "three-way system catalog cross join",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 44 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "G01",
@@ -795,12 +1027,442 @@
     {
       "id": "G09",
       "category": "G",
-      "kind": "attack",
+      "kind": "residual",
       "title": "pg_class table-name enumeration",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "residual risk (disclosure of data the person may read (relation names in pg_class)): the call returns data, as documented"
+    },
+    {
+      "id": "G10",
+      "category": "G",
+      "kind": "attack",
+      "title": "table_to_xml on the canary table",
       "expected_layer": "privileges",
       "observed_layer": "privileges",
       "passed": true,
       "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G11",
+      "category": "G",
+      "kind": "attack",
+      "title": "EXPLAIN ANALYZE of a read of the canary table",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "call_refused: the database refused the privileged call"
+    },
+    {
+      "id": "G12",
+      "category": "G",
+      "kind": "attack",
+      "title": "pg_stats histogram bounds of the canary table's columns",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "H01",
+      "category": "H",
+      "kind": "attack",
+      "title": "DDL proposed as a write",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: refused with rejected_by_validation; proposal_state: proposal refused (rejected_by_validation); table_unchanged: public.redteam_evil unchanged"
+    },
+    {
+      "id": "H02",
+      "category": "H",
+      "kind": "attack",
+      "title": "multi-statement proposal",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: refused with rejected_by_validation; proposal_state: proposal refused (rejected_by_validation); table_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "H03",
+      "category": "H",
+      "kind": "attack",
+      "title": "data-modifying CTE feeding an INSERT",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: refused with rejected_by_validation; proposal_state: proposal refused (rejected_by_validation); table_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "H04",
+      "category": "H",
+      "kind": "attack",
+      "title": "plain SELECT proposed as a write",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: refused with rejected_by_validation; proposal_state: proposal refused (rejected_by_validation); table_unchanged: public.support_tickets unchanged"
+    },
+    {
+      "id": "H05",
+      "category": "H",
+      "kind": "attack",
+      "title": "EXECUTE of a statement prepared earlier through the read path",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "read path answered ok to the prelude; refused: refused with rejected_by_validation; proposal_state: proposal refused (rejected_by_validation); table_unchanged: public.support_tickets unchanged"
+    },
+    {
+      "id": "H06",
+      "category": "H",
+      "kind": "attack",
+      "title": "proposal from a person with no writer role",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: refused with no_writer_role; proposal_state: proposal refused (no_writer_role); table_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "H07",
+      "category": "H",
+      "kind": "attack",
+      "title": "execute before approval",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: not_executable; still_pending: the proposal is still pending; nothing_written: 0 row(s) written (at most 0 allowed)"
+    },
+    {
+      "id": "H08",
+      "category": "H",
+      "kind": "attack",
+      "title": "get_proposal for another person's proposal",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "get_hidden: get_proposal answered not_found; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H09",
+      "category": "H",
+      "kind": "attack",
+      "title": "executing another person's approved proposal",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "execute_refused: execute answered not_found; still_approved: dana's proposal is untouched; nothing_written: 0 row(s) written (at most 0 allowed)"
+    },
+    {
+      "id": "H10",
+      "category": "H",
+      "kind": "attack",
+      "title": "non-approver opens a valid approval link",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "http_status: HTTP 403; nothing_shown: no statement on the page; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H11",
+      "category": "H",
+      "kind": "attack",
+      "title": "non-approver posts an approval",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "http_status: HTTP 400; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H12",
+      "category": "H",
+      "kind": "attack",
+      "title": "tampered approval-link signature",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "http_status: HTTP 404; nothing_shown: no statement on the page; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H13",
+      "category": "H",
+      "kind": "attack",
+      "title": "approval link with an extended expiry",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "get_refused: HTTP 404; post_refused: HTTP 404; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H14",
+      "category": "H",
+      "kind": "attack",
+      "title": "approval posted without any session",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "http_status: HTTP 401; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H15",
+      "category": "H",
+      "kind": "attack",
+      "title": "cross-site approval without a valid CSRF token",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "forged_token: HTTP 400; missing_token: HTTP 400; still_pending: the proposal is still pending"
+    },
+    {
+      "id": "H16",
+      "category": "H",
+      "kind": "attack",
+      "title": "replaying the approval after the decision",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "http_status: HTTP 409; single_grant: the proposal is still approved once"
+    },
+    {
+      "id": "H17",
+      "category": "H",
+      "kind": "attack",
+      "title": "executing a rejected proposal",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "refused: not_executable; nothing_written: 0 row(s) written (at most 0 allowed)"
+    },
+    {
+      "id": "H18",
+      "category": "H",
+      "kind": "attack",
+      "title": "approved UPDATE exceeding max_rows",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "execution_failed: failed after 1014 affected rows; table_unchanged: public.support_tickets unchanged; no_marked_rows: no ticket carries the marker"
+    },
+    {
+      "id": "H19",
+      "category": "H",
+      "kind": "attack",
+      "title": "double execution of one approval",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "exactly_one_executed: one execution; second_refused: not_executable; rows_written: 1 row(s) written (at most 1 allowed)"
+    },
+    {
+      "id": "H20",
+      "category": "H",
+      "kind": "attack",
+      "title": "concurrent execution of one approval",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "exactly_one_executed: one execution; loser_refused: not_executable; rows_written: 1 row(s) written (at most 1 allowed)"
+    },
+    {
+      "id": "I01",
+      "category": "I",
+      "kind": "attack",
+      "title": "no bearer token at /mcp",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 401; no_identity: no identity returned"
+    },
+    {
+      "id": "I02",
+      "category": "I",
+      "kind": "attack",
+      "title": "token signed with a foreign Ed25519 key",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 401; no_identity: no identity returned"
+    },
+    {
+      "id": "I03",
+      "category": "I",
+      "kind": "attack",
+      "title": "alg none",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 401; no_identity: no identity returned"
+    },
+    {
+      "id": "I04",
+      "category": "I",
+      "kind": "attack",
+      "title": "wrong typ header",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 401; no_identity: no identity returned"
+    },
+    {
+      "id": "I05",
+      "category": "I",
+      "kind": "attack",
+      "title": "raw upstream identity-provider token",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 401; no_identity: no identity returned"
+    },
+    {
+      "id": "I06",
+      "category": "I",
+      "kind": "attack",
+      "title": "plain PKCE at /authorize",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "error_redirect: error=invalid_request"
+    },
+    {
+      "id": "I07",
+      "category": "I",
+      "kind": "attack",
+      "title": "redirect_uri mismatch at /authorize",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "no_redirect: HTTP 400, no redirect"
+    },
+    {
+      "id": "I08",
+      "category": "I",
+      "kind": "attack",
+      "title": "resource naming a different URL at /authorize",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "error_redirect: error=invalid_target"
+    },
+    {
+      "id": "I09",
+      "category": "I",
+      "kind": "attack",
+      "title": "identity mapped to no database role",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 403"
+    },
+    {
+      "id": "I10",
+      "category": "I",
+      "kind": "attack",
+      "title": "cross-identity isolation",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "bob_isolated: bob is pw_u_bob; alice_isolated: alice is pw_u_alice"
+    },
+    {
+      "id": "I11",
+      "category": "I",
+      "kind": "attack",
+      "title": "refresh-token reuse",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "reuse_refused: reuse returned invalid_grant; family_revoked: the newest token also failed"
+    },
+    {
+      "id": "I12",
+      "category": "I",
+      "kind": "attack",
+      "title": "token of a suspended identity",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "suspended_refused: whoami and query returned 401; restored: access is back after unsuspend"
+    },
+    {
+      "id": "I13",
+      "category": "I",
+      "kind": "attack",
+      "title": "sign-in by a suspended identity",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "http_status: HTTP 403"
+    },
+    {
+      "id": "I14",
+      "category": "I",
+      "kind": "attack",
+      "title": "resource naming a different URL at /token",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "invalid_target: invalid_target, no token"
+    },
+    {
+      "id": "I15",
+      "category": "I",
+      "kind": "attack",
+      "title": "wrong machine secret",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "invalid_client: invalid_client, no token"
+    },
+    {
+      "id": "I16",
+      "category": "I",
+      "kind": "attack",
+      "title": "authorization-code replay",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "replay_refused: the replay returned invalid_grant"
+    },
+    {
+      "id": "I17",
+      "category": "I",
+      "kind": "attack",
+      "title": "wrong PKCE verifier",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "wrong_verifier: invalid_grant; code_burned: the code cannot be redeemed afterwards"
+    },
+    {
+      "id": "I18",
+      "category": "I",
+      "kind": "attack",
+      "title": "authorization-code redirect_uri swap",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "redirect_swap: invalid_grant"
+    },
+    {
+      "id": "I19",
+      "category": "I",
+      "kind": "attack",
+      "title": "implicit grant request",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "error_redirect: error=unsupported_response_type; no_token: no token in the redirect"
+    },
+    {
+      "id": "I20",
+      "category": "I",
+      "kind": "attack",
+      "title": "authorization for an unregistered client",
+      "expected_layer": "oauth",
+      "observed_layer": "oauth",
+      "passed": true,
+      "detail": "no_redirect: HTTP 400, no redirect"
     },
     {
       "id": "BENIGN01",
@@ -900,7 +1562,7 @@
       "expected_layer": null,
       "observed_layer": "ok",
       "passed": true,
-      "detail": "benign control succeeded"
+      "detail": "executed=executed, state=executed, rows written=1"
     },
     {
       "id": "BENIGN11",
