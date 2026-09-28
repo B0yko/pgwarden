@@ -1,0 +1,172 @@
+# Category I: OAuth and session.
+#
+# Every case is black-box: forged or missing bearer tokens at /mcp and abusive
+# requests to the OAuth endpoints, run as procedures (`scenario:`, see
+# redteam/scenarios.py). Forged tokens are minted with a fresh attacker key, since
+# the runner never holds the gateway's key. The verdicts are the HTTP status and
+# the OAuth error, never the error text.
+#
+# Two attacks named in the spec need the gateway's private key or its clock, so
+# they stay covered by tests/integration/test_oauth_server.py and
+# test_mcp_gateway.py rather than here: a token with the wrong audience, an
+# expired token, and a refresh chain past its 8-hour lifetime.
+
+- id: I01
+  category: I
+  title: "no bearer token at /mcp"
+  scenario: oauth_no_bearer
+  identity: bob
+  objective: "send a tools/call with no Authorization header at all."
+  expected_layer: oauth
+
+- id: I02
+  category: I
+  title: "token signed with a foreign Ed25519 key"
+  scenario: oauth_foreign_key
+  identity: bob
+  objective: "forge a token for bob (correct issuer, audience, client and key id) signed with the attacker's own Ed25519 key."
+  expected_layer: oauth
+
+- id: I03
+  category: I
+  title: "alg none"
+  scenario: oauth_alg_none
+  identity: bob
+  objective: "present an unsigned token (alg none) with perfect claims for bob."
+  expected_layer: oauth
+
+- id: I04
+  category: I
+  title: "wrong typ header"
+  scenario: oauth_wrong_typ
+  identity: bob
+  objective: "sign a forged bob token with the attacker's key and the generic JWT type instead of at+jwt."
+  expected_layer: oauth
+
+- id: I05
+  category: I
+  title: "raw upstream identity-provider token"
+  scenario: oauth_upstream_token
+  identity: bob
+  objective: "present an RS256 ID token in the shape the upstream IdP issues, as the access token (token passthrough)."
+  expected_layer: oauth
+
+- id: I06
+  category: I
+  title: "plain PKCE at /authorize"
+  scenario: oauth_plain_pkce
+  identity: bob
+  objective: "start an authorization with code_challenge_method=plain, which OAuth 2.1 forbids and which offers no protection if the challenge leaks."
+  expected_layer: oauth
+
+- id: I07
+  category: I
+  title: "redirect_uri mismatch at /authorize"
+  scenario: oauth_redirect_mismatch
+  identity: bob
+  objective: "ask for a redirect_uri the client never registered so the code is delivered to the attacker."
+  expected_layer: oauth
+
+- id: I08
+  category: I
+  title: "resource naming a different URL at /authorize"
+  scenario: oauth_resource_mismatch
+  identity: bob
+  objective: "request authorization for a resource that is not this gateway, to get a token another server would accept."
+  expected_layer: oauth
+
+- id: I09
+  category: I
+  title: "identity mapped to no database role"
+  scenario: oauth_unmapped_identity
+  identity: mallory
+  objective: "mallory authenticates at the upstream IdP but is mapped to no person; the gateway must not issue a code."
+  expected_layer: oauth
+
+- id: I10
+  category: I
+  title: "cross-identity isolation"
+  scenario: oauth_cross_identity
+  identity: bob
+  objective: "use bob's token and then alice's, checking that each maps to exactly its own database role and that neither response names the other."
+  expected_layer: oauth
+
+- id: I11
+  category: I
+  title: "refresh-token reuse"
+  scenario: oauth_refresh_reuse
+  identity: bob
+  objective: "replay a rotated refresh token; the gateway must treat it as theft and revoke the whole family, including the newest token."
+  expected_layer: oauth
+
+- id: I12
+  category: I
+  title: "token of a suspended identity"
+  scenario: oauth_suspended_token
+  identity: bob
+  objective: "an admin suspends dana while she holds a valid access token; the token must stop working at once."
+  expected_layer: oauth
+
+- id: I13
+  category: I
+  title: "sign-in by a suspended identity"
+  scenario: oauth_suspended_login
+  identity: bob
+  objective: "a suspended person tries to sign in again to get a fresh code."
+  expected_layer: oauth
+
+- id: I14
+  category: I
+  title: "resource naming a different URL at /token"
+  scenario: oauth_resource_at_token
+  identity: bob
+  objective: "a machine credential asks the token endpoint for a token whose audience is another server."
+  expected_layer: oauth
+
+- id: I15
+  category: I
+  title: "wrong machine secret"
+  scenario: oauth_bad_machine_secret
+  identity: bob
+  objective: "present a known machine name with a guessed secret at the token endpoint."
+  expected_layer: oauth
+
+- id: I16
+  category: I
+  title: "authorization-code replay"
+  scenario: oauth_code_replay
+  identity: bob
+  objective: "redeem an authorization code a second time."
+  expected_layer: oauth
+
+- id: I17
+  category: I
+  title: "wrong PKCE verifier"
+  scenario: oauth_wrong_verifier
+  identity: bob
+  objective: "redeem a stolen authorization code with a verifier that does not match the challenge."
+  expected_layer: oauth
+
+- id: I18
+  category: I
+  title: "authorization-code redirect_uri swap"
+  scenario: oauth_code_redirect_swap
+  identity: bob
+  objective: "redeem a code with a redirect_uri other than the one it was issued for (code injection)."
+  expected_layer: oauth
+
+- id: I19
+  category: I
+  title: "implicit grant request"
+  scenario: oauth_implicit_grant
+  identity: bob
+  objective: "ask for response_type=token, the removed implicit flow that would return an access token in the redirect."
+  expected_layer: oauth
+
+- id: I20
+  category: I
+  title: "authorization for an unregistered client"
+  scenario: oauth_unknown_client
+  identity: bob
+  objective: "start an authorization for a client_id that was never registered."
+  expected_layer: oauth

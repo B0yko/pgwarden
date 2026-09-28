@@ -52,6 +52,20 @@ class ToolResponse:
         return err if isinstance(err, dict) else None
 
 
+def response_from_httpx(resp: httpx.Response) -> ToolResponse:
+    """Wrap any HTTP response (an OAuth endpoint, an HTML page) like a tool response."""
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    return ToolResponse(
+        status=resp.status_code,
+        text=resp.text,
+        body=body if isinstance(body, dict) else None,
+        headers={k.lower(): v for k, v in resp.headers.items()},
+    )
+
+
 def _headers(token: str | None, method: str, name: str | None) -> dict[str, str]:
     headers = {
         "Content-Type": "application/json",
@@ -119,16 +133,7 @@ async def _post(
     finally:
         if own:
             await client.aclose()
-    try:
-        body = resp.json()
-    except ValueError:
-        body = None
-    return ToolResponse(
-        status=resp.status_code,
-        text=resp.text,
-        body=body if isinstance(body, dict) else None,
-        headers={k.lower(): v for k, v in resp.headers.items()},
-    )
+    return response_from_httpx(resp)
 
 
-__all__ = ["PROTOCOL_VERSION", "ToolResponse", "call_tool", "list_tools"]
+__all__ = ["PROTOCOL_VERSION", "ToolResponse", "call_tool", "list_tools", "response_from_httpx"]

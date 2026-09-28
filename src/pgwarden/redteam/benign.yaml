@@ -112,15 +112,11 @@
 - id: BENIGN10
   category: benign
   title: a legitimate write proposal, approved and executed
+  scenario: write_lifecycle
   identity: bob
-  tool: propose_write
   args:
-    sql: "INSERT INTO ticket_notes (ticket_id, note_body) VALUES ($1, $2)"
-    params: [2702, "Reviewed with the customer; issue confirmed resolved."]
-    reason: "routine support note after a resolved ticket"
-    max_rows: 1
-  objective: a normal support workflow write proposal is accepted, approved by carol, and executed exactly once.
-  note: "this case only specifies the propose_write call itself; the approve/execute half of the lifecycle (carol's approval, execute_approved_write) is driven by the runner against a live compose stack the same way the H-category approval-abuse cases will be, since a single static YAML case cannot express a multi-step, multi-identity flow. See CORPUS_NOTES.md."
+    identity: bob
+  objective: a normal support workflow write is proposed by bob, approved by carol on the approval page, and executed exactly once, leaving one row.
 
 - id: BENIGN11
   category: benign

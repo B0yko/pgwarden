@@ -491,7 +491,7 @@ def redteam_llm_command(
     from pgwarden.redteam.stack import StackClient
 
     base_url = _bench_target(target_url)
-    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
+    _require_secret("PGWARDEN_ADMIN_DSN")
     target_dsn = _require_env("PGWARDEN_TARGET_DSN")
     role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
     api_key = _os.environ.get("PGWARDEN_LLM_API_KEY") or _os.environ.get("OPENROUTER_API_KEY")
@@ -618,8 +618,12 @@ def redteam_run_command(
 
     Needs PGWARDEN_ADMIN_DSN (naming the target database) for the state-based
     oracles, and a machine secret (--machine-secret-file or PGWARDEN_MACHINE_SECRET)
-    for the machine-run cases. Exits non-zero unless every must-block attack is
-    blocked and every benign control passes.
+    for the machine-run cases. The approval (H) and OAuth (I) scenarios sign in to
+    the mock identity provider as the demo people, so they run against the demo
+    stack. Set PGWARDEN_STATE_DSN (the state database, as pgwarden_app) to let the
+    run clear the demo principals' rate windows first, so it can be repeated within
+    the hour; a fresh stack does not need it. Exits non-zero unless every
+    must-block attack is blocked and every benign control passes.
     """
     import datetime as _dt
 
@@ -650,6 +654,7 @@ def redteam_run_command(
             admin_dsn=admin_dsn,
             machine_secrets=machine_secrets,
             allow_load=allow_load,
+            state_dsn=os.environ.get("PGWARDEN_STATE_DSN"),
         )
         results = await runner.run(load_corpus())
         return await build_report(

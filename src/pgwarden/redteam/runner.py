@@ -11,16 +11,25 @@ demo data or the approval/OAuth flows run only against the demo stack.
 
 from __future__ import annotations
 
+import asyncio
+import collections
 import dataclasses
 import time
 from pathlib import Path
 from typing import Any
 
 import asyncpg
+import httpx
 import yaml
 
 from pgwarden.redteam import mcp_client
 from pgwarden.redteam.oracles import ORACLES, OracleContext, table_checksum
+from pgwarden.redteam.scenarios import (
+    APPROVAL_CODES,
+    SCENARIOS,
+    ScenarioContext,
+    ScenarioError,
+)
 from pgwarden.redteam.stack import StackClient, Tokens
 
 ATTACKS_DIR = Path(__file__).parent / "attacks"
@@ -28,6 +37,13 @@ BENIGN_FILE = Path(__file__).parent / "benign.yaml"
 
 # The single region each RLS-restricted person may see (see demo/pgwarden.yaml).
 REGION_FOR_IDENTITY = {"bob": "EU", "dana": "US"}
+# Identities that only ever read customers through the masked views: any raw PII is a leak.
+MASKED_IDENTITIES = frozenset({"alice", "nightly-report"})
+# Principals whose rate windows the runner clears before a run, when it has the state DSN.
+_RATE_SUBJECTS = ["person:alice", "person:bob", "person:dana", "machine:nightly-report"]
+# The query limit is 60 per fixed minute; stay well under it in any sliding minute.
+QUERY_BUDGET_PER_MINUTE = 50
+_RATE_LIMITED_SQLSTATE = "53400"
 # The mock IdP subject for each demo person.
 IDP_SUB = {
     "alice": "usr_alice",
@@ -55,16 +71,7 @@ ERROR_LAYER_BY_SQLSTATE = {
 # Layers that can only show up as an error. privileges, RLS and masking can also
 # block silently (privilege-filtered metadata, zero foreign rows, masked values).
 _ERROR_LAYERS = {"protocol", "read_only_transaction"}
-_APPROVAL_CODES = {
-    "rejected_by_validation",
-    "no_writer_role",
-    "self_approval",
-    "not_an_approver",
-    "not_executable",
-    "binding_mismatch",
-    "not_pending",
-    "not_found",
-}
+_APPROVAL_CODES = APPROVAL_CODES
 _TABLE_FOR_CATEGORY = {
     "A": "refunds",
     "B": "refunds",
@@ -115,8 +122,13 @@ class Runner:
     admin_dsn: str
     machine_secrets: dict[str, str] = dataclasses.field(default_factory=dict)
     allow_load: bool = False
+    # Optional state-database DSN (as pgwarden_app). With it the runner clears the
+    # rate windows of the demo principals before a run, so a rerun within the hour
+    # does not trip the 10-proposals-per-hour limit. A fresh stack does not need it.
+    state_dsn: str | None = None
     _tokens: dict[str, Tokens] = dataclasses.field(default_factory=dict)
     _client_id: str | None = None
+    _query_times: dict[str, collections.deque[float]] = dataclasses.field(default_factory=dict)
 
     async def _token(self, identity: str) -> Tokens:
         if identity not in self._tokens:
@@ -125,14 +137,118 @@ class Runner:
                     identity, self.machine_secrets[identity]
                 )
             else:
-                # Register one OAuth client and reuse it for every person, so a run
-                # does not itself trip the registration rate limit (item 14).
-                if self._client_id is None:
-                    self._client_id = await self.client.register_client("pgwarden red team")
                 self._tokens[identity] = await self.client.login(
-                    IDP_SUB[identity], client_id=self._client_id
+                    IDP_SUB[identity], client_id=await self._registered_client()
                 )
         return self._tokens[identity]
+
+    async def _registered_client(self) -> str:
+        # Register one OAuth client and reuse it for every person, so a run
+        # does not itself trip the registration rate limit (item 14).
+        if self._client_id is None:
+            self._client_id = await self.client.register_client("pgwarden red team")
+        return self._client_id
+
+    async def _pace(self, identity: str) -> None:
+        """Keep ``query`` calls under the per-minute limit in any sliding minute."""
+        window = self._query_times.setdefault(identity, collections.deque())
+        while True:
+            now = time.monotonic()
+            while window and now - window[0] >= 60.5:
+                window.popleft()
+            if len(window) < QUERY_BUDGET_PER_MINUTE:
+                break
+            await asyncio.sleep(window[0] + 60.5 - now)
+        window.append(time.monotonic())
+
+    async def call(
+        self, identity: str, tool: str, args: dict[str, Any], *, paced: bool = True
+    ) -> mcp_client.ToolResponse:
+        """One tool call as ``identity``, paced under the rate limit.
+
+        A rate-limited answer to a case that is not a flood means the run outpaced
+        the limiter (for example a second run inside the same minute), not that the
+        attack was blocked: wait out the window and ask again, so the case still
+        reaches the layer it is meant to test.
+        """
+        token = await self._token(identity)
+        response = None
+        for _ in range(4):
+            if paced and tool == "query":
+                await self._pace(identity)
+            response = await mcp_client.call_tool(
+                self.client.resource, token.access_token, tool, args
+            )
+            err = response.tool_error
+            if paced and err is not None and err.get("sqlstate") == _RATE_LIMITED_SQLSTATE:
+                await asyncio.sleep(float(err.get("retry_after_s") or 1) + 0.5)
+                continue
+            return response
+        assert response is not None
+        return response
+
+    async def _reset_rate_windows(self) -> None:
+        if not self.state_dsn:
+            return
+        conn = await asyncpg.connect(self.state_dsn, timeout=10)
+        try:
+            await conn.execute(
+                "DELETE FROM pgwarden.rate_windows WHERE scope IN ('query', 'proposal') "
+                "AND subject = ANY($1::text[])",
+                _RATE_SUBJECTS,
+            )
+        finally:
+            await conn.close()
+
+    def _scenario_context(self, admin: asyncpg.Connection) -> ScenarioContext:
+        return ScenarioContext(
+            client=self.client,
+            admin=admin,
+            call=self.call,
+            tokens=self._token,
+            client_id=self._registered_client,
+            machine_secrets=self.machine_secrets,
+            region_for_identity=REGION_FOR_IDENTITY,
+            masked_identities=MASKED_IDENTITIES,
+        )
+
+    async def run_scenario(self, case: dict[str, Any], ctx: ScenarioContext) -> CaseResult:
+        """Run a case whose ``scenario:`` names a procedure in ``redteam.scenarios``."""
+        must_block = case.get("must_block", "expected_layer" in case)
+        expected = case.get("expected_layer")
+        name = case["scenario"]
+        procedure = SCENARIOS.get(name)
+        kind = "attack" if must_block else "benign"
+
+        def result(blocked: bool, passed: bool, observed: str | None, detail: str) -> CaseResult:
+            return CaseResult(
+                case["id"],
+                case["category"],
+                case["title"],
+                kind,
+                must_block,
+                blocked,
+                passed,
+                expected,
+                observed,
+                detail,
+            )
+
+        if procedure is None:
+            return result(False, False, None, f"unknown scenario {name!r}")
+        try:
+            verdict = await procedure(ctx, case)
+        except (ScenarioError, httpx.HTTPError) as exc:
+            return result(False, False, "error", f"scenario could not run: {exc}")
+        if not must_block:  # a benign scenario passes when the gateway did not block it
+            return result(
+                verdict.blocked, not verdict.blocked, verdict.observed_layer, verdict.detail
+            )
+        layer_ok = verdict.observed_layer == expected
+        detail = verdict.detail
+        if not layer_ok:
+            detail = f"layer expected {expected}, observed {verdict.observed_layer}. {detail}"
+        return result(verdict.blocked, verdict.blocked and layer_ok, verdict.observed_layer, detail)
 
     async def run_case(self, case: dict[str, Any], admin: asyncpg.Connection) -> CaseResult:
         must_block = case.get("must_block", "expected_layer" in case)
@@ -140,12 +256,9 @@ class Runner:
         table = _TABLE_FOR_CATEGORY.get(category)
         before = await table_checksum(admin, table) if table else None
 
-        token = await self._token(case["identity"])
         args = case.get("args", {})
         started = time.perf_counter()
-        response = await mcp_client.call_tool(
-            self.client.resource, token.access_token, case["tool"], args
-        )
+        response = await self.call(case["identity"], case["tool"], args)
         elapsed_ms = (time.perf_counter() - started) * 1000.0
 
         if not must_block:
@@ -183,15 +296,16 @@ class Runner:
         expected = case.get("expected_layer")
         observed = observed_layer(response, expected)
         # a fresh whoami confirms the gateway is still healthy after the attack
-        healthy = (
-            await mcp_client.call_tool(self.client.resource, token.access_token, "whoami", {})
-        ).result.get("pg_role") is not None
+        healthy = (await self.call(case["identity"], "whoami", {})).result.get(
+            "pg_role"
+        ) is not None
 
         ctx = OracleContext(
             response=response,
             admin=admin,
             identity=case["identity"],
             region_for_identity=REGION_FOR_IDENTITY,
+            masked_identities=MASKED_IDENTITIES,
         )
         oracle_details: list[str] = []
         blocked = True
@@ -240,15 +354,21 @@ class Runner:
         )
 
     async def run(self, cases: list[dict[str, Any]]) -> list[CaseResult]:
+        await self._reset_rate_windows()
         admin = await asyncpg.connect(self.admin_dsn, timeout=10)
+        scenario_ctx = self._scenario_context(admin)
         results: list[CaseResult] = []
         try:
             for case in cases:
                 is_flood = case["id"].startswith("F") and "flood" in case.get("title", "").lower()
                 if is_flood and not self.allow_load:
                     continue
-                results.append(await self.run_case(case, admin))
+                if "scenario" in case:
+                    results.append(await self.run_scenario(case, scenario_ctx))
+                else:
+                    results.append(await self.run_case(case, admin))
         finally:
+            await scenario_ctx.aclose()
             await admin.close()
         return results
 

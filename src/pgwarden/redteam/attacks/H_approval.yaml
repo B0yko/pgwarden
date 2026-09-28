@@ -1,0 +1,235 @@
+# Category H: approval abuse.
+#
+# Every case is a procedure (`scenario:`, see redteam/scenarios.py) because an
+# approval attack needs several steps and several identities: a proposer's
+# token, an approver's signed-in browser session (carol, the demo's only
+# approver and admin) and sometimes a second person. Every case is black-box:
+# the MCP endpoint with bearer tokens, and the /approve and /admin pages with a
+# session cookie and CSRF token. The verdicts are read from state, not from
+# error wording: the proposal's state fetched back through get_proposal, the
+# checksum of the target table, rows carrying a per-run marker counted over an
+# admin connection, and the HTTP status.
+#
+# The demo has no person who is also an approver, so self-approval cannot be
+# staged here (tests/integration/test_approvals.py covers it), and expired
+# grants, or SQL modified after approval, need the gateway's clock or its state
+# database; those are covered by the same integration tests.
+#
+# expected_layer is `approval` throughout: the write path or the approval page
+# refuses. Proposals are budgeted (10 per person per hour): the cases that only
+# need a pending proposal share one per run.
+
+- id: H01
+  category: H
+  title: "DDL proposed as a write"
+  scenario: propose_rejected
+  identity: bob
+  args:
+    identity: bob
+    sql: "CREATE TABLE redteam_evil (x int)"
+    params: []
+    table: public.redteam_evil
+  objective: "get a CREATE TABLE queued for approval, hoping the approver skims a one-line statement and the write path only checks that the statement starts like a write."
+  expected_layer: approval
+  note: "the proposal is validated by EXPLAIN (FORMAT JSON) as the writer role; a utility statement has no ModifyTable plan, so it is rejected_by_validation. The table must stay absent."
+
+- id: H02
+  category: H
+  title: "multi-statement proposal"
+  scenario: propose_rejected
+  identity: bob
+  args:
+    identity: bob
+    sql: "UPDATE support_tickets SET status = 'closed' WHERE id = 2701; DELETE FROM ticket_notes"
+    params: []
+    table: public.ticket_notes
+  objective: "smuggle a destructive second statement behind an ordinary-looking UPDATE inside one proposal, so the approver's plan estimate describes only the first."
+  expected_layer: approval
+
+- id: H03
+  category: H
+  title: "data-modifying CTE feeding an INSERT"
+  scenario: propose_rejected
+  identity: bob
+  args:
+    identity: bob
+    sql: "WITH d AS (DELETE FROM ticket_notes WHERE id > 0 RETURNING ticket_id) INSERT INTO refunds (ticket_id, amount, reason) SELECT ticket_id, 1, 'x' FROM d"
+    params: []
+    table: public.ticket_notes
+  objective: "propose an INSERT whose plan root is Insert but whose CTE deletes rows, so a validator that only inspects the root node would approve it."
+  expected_layer: approval
+  note: "the plan has two ModifyTable nodes (the DELETE in the CTE and the INSERT), so validation rejects it; the spec names this exact shape."
+
+- id: H04
+  category: H
+  title: "plain SELECT proposed as a write"
+  scenario: propose_rejected
+  identity: dana
+  args:
+    identity: dana
+    sql: "SELECT id, subject FROM support_tickets WHERE region = 'US'"
+    params: []
+    table: public.support_tickets
+  objective: "use the approval queue as a second, human-mediated read channel: a SELECT that runs later with the writer role's connection settings, in the hope the approver waves through a harmless-looking read."
+  expected_layer: approval
+
+- id: H05
+  category: H
+  title: "EXECUTE of a statement prepared earlier through the read path"
+  scenario: propose_rejected
+  identity: dana
+  args:
+    identity: dana
+    prelude_sql: "PREPARE redteam_stmt AS UPDATE support_tickets SET status = 'closed'"
+    sql: "EXECUTE redteam_stmt"
+    params: []
+    table: public.support_tickets
+  objective: "prepare a destructive UPDATE on the read path (PREPARE works in a read-only transaction), then propose the innocent-looking text EXECUTE so the approver never sees the statement that will run."
+  expected_layer: approval
+  note: "the read path resets the connection on release (DISCARD ALL), so the prepared statement is gone before the proposal is validated: EXECUTE fails validation. The support_tickets checksum proves nothing ran."
+
+- id: H06
+  category: H
+  title: "proposal from a person with no writer role"
+  scenario: propose_rejected
+  identity: alice
+  args:
+    identity: alice
+    sql: "INSERT INTO ticket_notes (ticket_id, note_body) VALUES ($1, $2)"
+    params: [2702, "note from a reader"]
+    table: public.ticket_notes
+    expect_code: no_writer_role
+  objective: "alice is an analyst with no writer role; propose a write anyway to see whether the queue accepts proposals from identities that could never have their writes executed as themselves."
+  expected_layer: approval
+
+- id: H07
+  category: H
+  title: "execute before approval"
+  scenario: execute_before_approval
+  identity: bob
+  objective: "call execute_approved_write on a proposal that is still pending, hoping the write path runs the stored statement without waiting for the approver."
+  expected_layer: approval
+
+- id: H08
+  category: H
+  title: "get_proposal for another person's proposal"
+  scenario: proposal_other_person
+  identity: dana
+  args:
+    mode: get
+    proposer: bob
+    other: dana
+  objective: "read another person's pending proposal (its SQL, parameters and reason) by guessing or observing its id."
+  expected_layer: approval
+
+- id: H09
+  category: H
+  title: "executing another person's approved proposal"
+  scenario: proposal_other_person
+  identity: bob
+  args:
+    mode: execute
+    proposer: dana
+    other: bob
+  objective: "bob holds the id of dana's approved proposal and tries to run it under his own login, to use a grant someone else obtained."
+  expected_layer: approval
+
+- id: H10
+  category: H
+  title: "non-approver opens a valid approval link"
+  scenario: approve_page_non_approver
+  identity: bob
+  objective: "bob signs in through the identity provider and opens a leaked, correctly signed review link, to read the statement or to reach the Approve button."
+  expected_layer: approval
+
+- id: H11
+  category: H
+  title: "non-approver posts an approval"
+  scenario: approve_post_non_approver
+  identity: bob
+  objective: "bob posts the approval form for his own proposal from a signed-in session of his own."
+  expected_layer: approval
+  note: "bob cannot obtain a CSRF token (no page shows him a form), so the CSRF gate answers 400 before the approver check would answer 403; both refuse and the proposal stays pending."
+
+- id: H12
+  category: H
+  title: "tampered approval-link signature"
+  scenario: approve_tampered_signature
+  identity: bob
+  objective: "change one character of the link's HMAC signature and open it as the approver, betting on a non-constant-time or truncated comparison."
+  expected_layer: approval
+
+- id: H13
+  category: H
+  title: "approval link with an extended expiry"
+  scenario: approve_extended_expiry
+  identity: bob
+  objective: "keep the old signature but push the link's expiry out by 30 days, on the chance the signature does not cover the expiry."
+  expected_layer: approval
+
+- id: H14
+  category: H
+  title: "approval posted without any session"
+  scenario: approve_without_session
+  identity: bob
+  objective: "post the approval form with a valid signed link and a made-up form token but no signed-in session, so the request is authenticated by the link alone."
+  expected_layer: approval
+
+- id: H15
+  category: H
+  title: "cross-site approval without a valid CSRF token"
+  scenario: approve_csrf
+  identity: bob
+  objective: "forge the approver's form post from another site: the browser attaches the approver's session cookie, but the attacker cannot know the CSRF token."
+  expected_layer: approval
+
+- id: H16
+  category: H
+  title: "replaying the approval after the decision"
+  scenario: approve_replay
+  identity: dana
+  args:
+    identity: dana
+  objective: "post the approval form a second time after the proposal is approved, to mint a second grant or to reset the grant window."
+  expected_layer: approval
+
+- id: H17
+  category: H
+  title: "executing a rejected proposal"
+  scenario: execute_rejected
+  identity: dana
+  args:
+    identity: dana
+  objective: "the approver rejects the proposal; the proposer calls execute_approved_write anyway."
+  expected_layer: approval
+
+- id: H18
+  category: H
+  title: "approved UPDATE exceeding max_rows"
+  scenario: execute_max_rows
+  identity: bob
+  args:
+    identity: bob
+  objective: "propose an UPDATE with max_rows=1 that actually touches every ticket in bob's region; the approver sees a cap of one row, so the write path must enforce it at execution time."
+  expected_layer: approval
+  note: "the command tag reports more rows than max_rows, so the transaction is rolled back and the proposal is marked failed; the support_tickets checksum is unchanged."
+
+- id: H19
+  category: H
+  title: "double execution of one approval"
+  scenario: execute_twice
+  identity: dana
+  args:
+    identity: dana
+  objective: "run the same approved proposal twice in a row to write the row twice."
+  expected_layer: approval
+
+- id: H20
+  category: H
+  title: "concurrent execution of one approval"
+  scenario: execute_concurrent
+  identity: dana
+  args:
+    identity: dana
+  objective: "fire two execute calls at the same instant so both read the proposal as approved before either claims it."
+  expected_layer: approval
