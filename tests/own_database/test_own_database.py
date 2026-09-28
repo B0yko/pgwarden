@@ -48,10 +48,7 @@ def _with_db(dsn: str, dbname: str, *, user: str | None = None, password: str | 
 
     p = urlsplit(dsn)
     host = p.hostname or "127.0.0.1"
-    if user:
-        netloc = f"{user}:{password}@{host}:{p.port or 5432}"
-    else:
-        netloc = p.netloc
+    netloc = f"{user}:{password}@{host}:{p.port or 5432}" if user else p.netloc
     return urlunsplit((p.scheme, netloc, f"/{dbname}", "sslmode=disable", ""))
 
 

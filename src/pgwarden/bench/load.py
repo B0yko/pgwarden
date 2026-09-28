@@ -13,7 +13,6 @@ import asyncio
 import dataclasses
 import random
 import time
-from typing import Any
 
 import asyncpg
 import httpx
@@ -47,9 +46,7 @@ def _pick(mix: dict[str, float], rng: random.Random) -> str:
     return next(iter(mix))
 
 
-async def _sample_peak_connections(
-    admin_dsn: str, stop: asyncio.Event, out: list[int]
-) -> None:
+async def _sample_peak_connections(admin_dsn: str, stop: asyncio.Event, out: list[int]) -> None:
     conn = await asyncpg.connect(admin_dsn, timeout=10)
     try:
         while not stop.is_set():
