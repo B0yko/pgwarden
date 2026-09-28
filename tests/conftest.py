@@ -42,6 +42,13 @@ def with_role(dsn: str, role: str, password: str) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
+def target_dsn(dsn: str, dbname: str) -> str:
+    """Host/port/database/sslmode only, no user/password: what ``PGWARDEN_TARGET_DSN`` carries."""
+    parts = urlsplit(dsn)
+    netloc = f"{parts.hostname}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, f"/{dbname}", "sslmode=disable", ""))
+
+
 @pytest.fixture(scope="session")
 def pg_admin_dsn() -> str:
     dsn = os.environ.get(TEST_ADMIN_DSN_VAR)
@@ -55,7 +62,12 @@ def pg_admin_dsn() -> str:
 async def _recreate_database(admin_dsn: str, dbname: str) -> None:
     admin = await asyncpg.connect(admin_dsn, timeout=10)
     try:
-        await admin.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
+        # WITH (FORCE) (PG13+): a previous session -- most likely a pooled
+        # backend connection left open by the test PgBouncer fixture
+        # (tests/integration/test_doctor.py), which does not close its idle
+        # server connections just because the client disconnected -- must
+        # never make this fixture flaky.
+        await admin.execute(f'DROP DATABASE IF EXISTS "{dbname}" WITH (FORCE)')
         await admin.execute(f'CREATE DATABASE "{dbname}"')
     finally:
         await admin.close()
@@ -96,6 +108,12 @@ def pg_state_dsn(pg_admin_dsn: str) -> str:
 
     asyncio.run(setup())
     return state_dsn
+
+
+@pytest.fixture(scope="session")
+def pg_target_dsn(pg_admin_dsn: str) -> str:
+    """``pgw_shop``'s host/port/db/sslmode only -- what a `PoolManager` connects with."""
+    return target_dsn(pg_admin_dsn, "pgw_shop")
 
 
 @pytest.fixture(scope="session")
