@@ -15,9 +15,10 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 MEDIA = REPO_ROOT / "docs" / "media"
 sys.path.insert(0, str(REPO_ROOT / "devtools" / "screenshots"))
 
-import pngmeta  # noqa: E402  (devtools/screenshots/pngmeta.py, not part of the wheel)
 from PIL import Image  # noqa: E402
 from PIL.PngImagePlugin import PngInfo  # noqa: E402
+
+import pngmeta  # noqa: E402  (devtools/screenshots/pngmeta.py, not part of the wheel)
 
 
 def _png_with_metadata() -> bytes:
