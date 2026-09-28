@@ -1,0 +1,27 @@
+{% extends "admin_base.html" %}
+{% block title %}People · pgwarden{% endblock %}
+{% block content %}
+<h1>People and machines</h1>
+<p class="muted">Access is configuration as code (pgwarden.yaml) plus the DBA's own grants. Suspension takes effect immediately.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>kind</th><th>identity</th><th>Postgres role</th><th>bundles</th><th>writer</th><th>masking</th><th>last seen (UTC)</th><th>status</th><th></th></tr></thead>
+  <tbody>
+  {% for p in people %}
+  <tr>
+    <td>{{ p.kind }}</td><td>{{ p.identity }}</td><td><code>{{ p.role }}</code></td>
+    <td>{{ p.bundles }}</td><td>{{ p.writer or "" }}</td><td>{{ "masked" if p.masked else "raw" }}</td>
+    <td>{{ p.last_seen or "never" }}</td>
+    <td><span class="pill {{ 'bad' if p.suspended else 'ok' }}">{{ "suspended" if p.suspended else "active" }}</span></td>
+    <td>{% if p.kind == "person" %}
+      <form method="post" action="/admin/people/{{ p.role }}/{{ 'unsuspend' if p.suspended else 'suspend' }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="{{ '' if p.suspended else 'danger' }}">{{ "Unsuspend" if p.suspended else "Suspend" }}</button>
+      </form>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

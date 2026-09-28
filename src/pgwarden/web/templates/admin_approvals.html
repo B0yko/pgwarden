@@ -1,0 +1,23 @@
+{% extends "admin_base.html" %}
+{% block title %}Approvals · pgwarden{% endblock %}
+{% block content %}
+<h1>Write proposals</h1>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>created (UTC)</th><th>state</th><th>proposer</th><th>operation</th><th>estimate</th><th>reason</th><th></th></tr></thead>
+  <tbody>
+  {% for p in proposals %}
+  <tr>
+    <td>{{ p.created_at }}</td><td><span class="pill">{{ p.state }}</span></td>
+    <td>{{ p.proposer }}</td><td>{{ p.plan.operation }} {{ p.plan.relation or "" }}</td>
+    <td>{{ p.plan.estimated_rows if p.plan.estimated_rows is not none else "" }}</td>
+    <td>{{ p.reason[:120] }}</td>
+    <td><a href="{{ p.link }}">Review</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">No proposals yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

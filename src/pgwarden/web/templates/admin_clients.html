@@ -1,0 +1,21 @@
+{% extends "admin_base.html" %}
+{% block title %}OAuth clients · pgwarden{% endblock %}
+{% block content %}
+<h1>OAuth clients</h1>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>name</th><th>kind</th><th>client id</th><th>redirect URIs</th><th>auth</th><th>registered (UTC)</th><th>last used (UTC)</th></tr></thead>
+  <tbody>
+  {% for c in clients %}
+  <tr>
+    <td>{{ c.client_name }}</td><td>{{ c.kind }}</td><td><code>{{ c.client_id[:48] }}</code></td>
+    <td>{% for u in c.redirect_uris %}<code>{{ u }}</code><br>{% endfor %}</td>
+    <td>{{ c.token_endpoint_auth_method }}</td><td>{{ c.created_at }}</td><td>{{ c.last_used_at or "never" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">No clients registered yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

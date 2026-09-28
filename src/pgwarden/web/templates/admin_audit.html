@@ -1,0 +1,45 @@
+{% extends "admin_base.html" %}
+{% block title %}Audit · pgwarden{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<form class="filters" method="get" action="/admin/audit">
+  <label>Identity <input name="identity" value="{{ f.identity or '' }}" placeholder="person:bob or email"></label>
+  <label>Tool <input name="tool" value="{{ f.tool or '' }}" placeholder="query"></label>
+  <label>Outcome
+    <select name="outcome">
+      <option value="">any</option>
+      {% for o in outcomes %}<option value="{{ o }}" {{ 'selected' if o == f.outcome else '' }}>{{ o }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>From <input type="date" name="from" value="{{ date_from }}"></label>
+  <label>To <input type="date" name="to" value="{{ date_to }}"></label>
+  <button type="submit">Filter</button>
+  <a href="/admin/audit/export?format=jsonl&amp;{{ query }}">Export JSONL</a>
+  <a href="/admin/audit/export?format=csv&amp;{{ query }}">Export CSV</a>
+</form>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>seq</th><th>time (UTC)</th><th>event</th><th>identity</th><th>role</th><th>tool</th><th>outcome</th><th>rows</th><th>ms</th><th>SQL</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.seq }}</td><td>{{ r.ts }}</td><td>{{ r.event }}</td>
+    <td>{{ r.identity_email or r.identity_sub or "" }}</td><td>{{ r.pg_role or "" }}</td>
+    <td>{{ r.tool or "" }}</td>
+    <td><span class="pill {{ 'ok' if r.outcome in ('ok', 'started') else 'bad' }}">{{ r.outcome }}</span>{% if r.sqlstate %} <code>{{ r.sqlstate }}</code>{% endif %}</td>
+    <td>{{ r.rows_returned if r.rows_returned is not none else (r.rows_affected if r.rows_affected is not none else "") }}</td>
+    <td>{{ r.duration_ms if r.duration_ms is not none else "" }}</td>
+    <td><code>{{ (r.sql_text or "")[:160] }}</code></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="10" class="muted">No events match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<div class="pager">
+  {% if page > 1 %}<a href="/admin/audit?page={{ page - 1 }}&amp;{{ query }}">&larr; Newer</a>{% endif %}
+  <span class="muted">Page {{ page }}</span>
+  {% if has_more %}<a href="/admin/audit?page={{ page + 1 }}&amp;{{ query }}">Older &rarr;</a>{% endif %}
+</div>
+{% endblock %}

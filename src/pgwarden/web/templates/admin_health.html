@@ -1,0 +1,30 @@
+{% extends "admin_base.html" %}
+{% block title %}Health · pgwarden{% endblock %}
+{% block content %}
+<h1>Health</h1>
+<h2>Connection pools</h2>
+<p class="muted">One small pool per person or machine role; global cap {{ global_cap }}.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>role</th><th>idle</th><th>in use</th></tr></thead>
+  <tbody>
+  {% for role, idle, in_use in pools %}<tr><td><code>{{ role }}</code></td><td>{{ idle }}</td><td>{{ in_use }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No pools open.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>Latest doctor run</h2>
+{% if doctor %}
+<p>{{ doctor.ran_at }} &middot; <span class="pill {{ 'ok' if doctor.ok else 'bad' }}">{{ "pass" if doctor.ok else "fail" }}</span></p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>check</th><th>status</th><th>message</th></tr></thead>
+  <tbody>
+  {% for c in doctor.results %}<tr><td>{{ c.check }}</td><td><span class="pill {{ 'ok' if c.status == 'pass' else ('warn' if c.status == 'warn' else 'bad') }}">{{ c.status }}</span></td><td>{{ c.message }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">No doctor run recorded. Run <code>pgwarden doctor --record</code>.</p>
+{% endif %}
+{% endblock %}

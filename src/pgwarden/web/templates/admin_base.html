@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block main_class %}wide{% endblock %}
+{% block nav %}
+<nav>
+  {% for key, label in [("audit", "Audit"), ("approvals", "Approvals"), ("people", "People & machines"), ("clients", "OAuth clients"), ("health", "Health")] %}
+  <a href="/admin/{{ key }}" class="{{ 'current' if key == section else '' }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+<span class="who">{{ viewer }}</span>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+{% endblock %}
