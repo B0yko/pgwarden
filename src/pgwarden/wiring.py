@@ -30,6 +30,7 @@ from pgwarden.oauth.keys import load_signing_key
 from pgwarden.oauth.server import OAuthService, build_oauth_router, canonical_resource
 from pgwarden.oauth.upstream import UpstreamProvider
 from pgwarden.secrets import read_secret
+from pgwarden.web.landing import build_landing_router
 
 
 class WiringError(RuntimeError):
@@ -121,6 +122,7 @@ def build_app() -> FastAPI:
         now=_utcnow,
     )
     routers = [
+        build_landing_router(config),
         build_oauth_router(oauth),
         build_authorize_router(web),
         build_approval_router(web, approvals),

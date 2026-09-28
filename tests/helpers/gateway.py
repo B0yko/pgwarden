@@ -36,6 +36,7 @@ from pgwarden.oauth.jwt import mint_access_token
 from pgwarden.oauth.keys import SigningKey, generate_signing_key_pem, load_signing_key
 from pgwarden.oauth.server import OAuthService, build_oauth_router
 from pgwarden.oauth.upstream import UpstreamProvider
+from pgwarden.web.landing import build_landing_router
 
 NOW = dt.datetime(2025, 6, 1, 12, 0, 0, tzinfo=dt.UTC)
 TEST_SESSION_SECRET = "gateway-harness-session-secret"  # noqa: S105 (tests only)
@@ -136,6 +137,7 @@ async def run_gateway(
         authenticator,
         server_timing=True,
         routers=[
+            build_landing_router(config),
             build_oauth_router(oauth),
             build_authorize_router(web),
             build_approval_router(web, approvals),

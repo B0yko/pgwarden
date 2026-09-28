@@ -219,3 +219,18 @@ async def test_approval_page_flow(harness: Harness, pg_state_dsn: str) -> None:
             or {}
         )
     assert state["state"] == "approved"
+
+
+async def test_landing_page_lists_connect_commands_and_demo_identities(harness: Harness) -> None:
+    async with harness.raw() as http:
+        resp = await http.get("/")
+    assert resp.status_code == 200
+    assert f"claude mcp add --transport http pgwarden {harness.config.public_url}/mcp" in resp.text
+    assert "alice@example.com" in resp.text and "pw_u_bob" in resp.text
+    assert "script-src" not in resp.headers["content-security-policy"]
+
+
+async def test_post_mcp_is_not_redirected(harness: Harness) -> None:
+    async with harness.raw() as http:
+        resp = await http.post("/mcp", json={})
+    assert resp.status_code == 401  # auth first, never a 307 to /mcp/

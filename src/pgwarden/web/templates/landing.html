@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}pgwarden{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block nav %}<nav><a href="/admin/audit">Admin</a></nav>{% endblock %}
+{% block content %}
+<h1>pgwarden</h1>
+<p class="lead">AI assistants query Postgres as the person asking. The database enforces access, a human approves writes, every call is audited.</p>
+<dl class="facts">
+  <dt>MCP endpoint</dt><dd><code>{{ mcp_url }}</code> (streamable HTTP, OAuth 2.1)</dd>
+  <dt>Sign-in</dt><dd>{{ idp }}</dd>
+</dl>
+
+<h2>Connect a client</h2>
+<p><strong>MCP Inspector</strong></p>
+<pre>npx @modelcontextprotocol/inspector@{{ inspector_version }} --server-url {{ mcp_url }} --transport http</pre>
+<p class="muted">Then connect: the browser opens the consent page, the sign-in page and the confirmation.</p>
+<p><strong>Claude Code</strong></p>
+<pre>claude mcp add --transport http pgwarden {{ mcp_url }}</pre>
+<p class="muted">Then run <code>/mcp</code> inside Claude Code and choose Authenticate.</p>
+<p><strong>Cursor</strong> (<code>.cursor/mcp.json</code> in your project)</p>
+<pre>{{ cursor_json }}</pre>
+
+{% if demo %}
+<h2>Demo identities</h2>
+<p class="muted">Pick one on the mock sign-in page. Everything here is synthetic.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>identity</th><th>Postgres role</th><th>bundles</th><th>writer</th><th>access</th></tr></thead>
+  <tbody>
+  {% for row in demo_rows %}
+  <tr><td>{{ row.identity }}</td><td><code>{{ row.role }}</code></td><td>{{ row.bundles }}</td><td>{{ row.writer }}</td><td>{{ row.access }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
