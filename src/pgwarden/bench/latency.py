@@ -9,26 +9,33 @@ For each committed query shape it times three paths:
 * **gateway**: the MCP ``tools/call query`` over HTTP with a warm token.
 
 It reports p50/p95 per path and the gateway overhead, plus the median of each
-``Server-Timing`` span and the cold first-query cost for a role whose pool was
-evicted. The design target (overhead p50 <= 10 ms on the primary-key lookup) is
-a target, not a claim; the real number is reported either way.
+``Server-Timing`` span. A run repeats the whole measurement (``--repetitions``,
+3 by default) and reports the median across repetitions with the spread (min and
+max of each repetition's p50 and p95); the cold first-query cost lives in
+:mod:`pgwarden.bench.cold`. The design target (overhead p50 <= 10 ms on the
+primary-key lookup) is a target, not a claim; the real number is reported either
+way.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from statistics import median
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
-import httpx
 import yaml
 
 from pgwarden.db.pools import PoolManager
 from pgwarden.db.readpath import ReadConfig, run_read_query
+from pgwarden.db.scram import derive_password
 from pgwarden.redteam import mcp_client
-from pgwarden.redteam.stack import Tokens
+from pgwarden.redteam.stack import StackClient, Tokens
 
 QUERIES_FILE = Path(__file__).parent / "queries.yaml"
 
@@ -95,20 +102,56 @@ async def _time_wrapper(
     return samples
 
 
+class BenchCallError(RuntimeError):
+    """A timed gateway call did not return rows. A run with failing calls proves nothing."""
+
+
+def check_call(resp: mcp_client.ToolResponse) -> None:
+    """Raise unless the gateway answered a timed ``query`` call with a result, not an error."""
+    err = resp.tool_error
+    if resp.status != 200 or err is not None:
+        detail = err.get("message") if err else resp.text[:200]
+        hint = (
+            " (raise the limits: run the bench config)"
+            if err and err.get("sqlstate") == "53400"
+            else ""
+        )
+        raise BenchCallError(
+            f"the gateway refused a timed call (HTTP {resp.status}): {detail}{hint}"
+        )
+
+
 async def _time_gateway(
-    mcp_url: str, token: str, sql: str, params: list[Any], n: int
+    client: StackClient, token: str, sql: str, params: list[Any], n: int
 ) -> tuple[list[float], list[dict[str, float]]]:
     samples: list[float] = []
     spans: list[dict[str, float]] = []
-    async with httpx.AsyncClient(timeout=30.0) as http:
+    async with client.http_client(timeout=30.0) as http:
         for _ in range(n):
             start = time.perf_counter()
             resp = await mcp_client.call_tool(
-                mcp_url, token, "query", {"sql": sql, "params": params}, http=http
+                client.mcp_endpoint, token, "query", {"sql": sql, "params": params}, http=http
             )
             samples.append((time.perf_counter() - start) * 1000.0)
+            check_call(resp)
             spans.append(_parse_server_timing(resp.headers.get("server-timing", "")))
     return samples, spans
+
+
+def role_dsn_for(target_dsn: str, role: str, role_secret: str) -> str:
+    """A DSN that logs in as ``role`` with the password derived from the role secret."""
+    parts = urlsplit(target_dsn)
+    netloc = f"{role}:{derive_password(role_secret, role)}@{parts.hostname}:{parts.port or 5432}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+
+
+async def fetch_postgres_version(role_dsn: str) -> str:
+    """``SHOW server_version`` over the bench role's own login (no admin credentials)."""
+    conn = await asyncpg.connect(role_dsn, timeout=10)
+    try:
+        return str(await conn.fetchval("SHOW server_version"))
+    finally:
+        await conn.close()
 
 
 async def run_latency(
@@ -116,25 +159,21 @@ async def run_latency(
     target_dsn: str,
     role: str,
     role_secret: str,
-    mcp_url: str,
+    client: StackClient,
     token: Tokens,
     iterations: int,
     warmup: int,
-    server_timing_headers: list[dict[str, float]] | None = None,
+    label: str = "",
 ) -> list[LatencyResult]:
+    """One repetition: every committed query shape through the three paths."""
     cfg = ReadConfig()
     pm = PoolManager(target_dsn=target_dsn, role_secret=role_secret)
-    from urllib.parse import urlsplit, urlunsplit
-
-    from pgwarden.db.scram import derive_password
-
-    parts = urlsplit(target_dsn)
-    netloc = f"{role}:{derive_password(role_secret, role)}@{parts.hostname}:{parts.port or 5432}"
-    role_dsn = urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+    role_dsn = role_dsn_for(target_dsn, role, role_secret)
 
     results: list[LatencyResult] = []
     try:
         for q in load_queries():
+            print(f"  {label}{q['label']}", file=sys.stderr, flush=True)
             conn = await asyncpg.connect(role_dsn, timeout=10, statement_cache_size=0)
             try:
                 await _time_direct(conn, q["sql"], q["params"], warmup)
@@ -143,9 +182,9 @@ async def run_latency(
                 await conn.close()
             await _time_wrapper(pm, role, q["sql"], q["params"], warmup, cfg)
             wrapper = await _time_wrapper(pm, role, q["sql"], q["params"], iterations, cfg)
-            await _time_gateway(mcp_url, token.access_token, q["sql"], q["params"], warmup)
+            await _time_gateway(client, token.access_token, q["sql"], q["params"], warmup)
             gateway, spans = await _time_gateway(
-                mcp_url, token.access_token, q["sql"], q["params"], iterations
+                client, token.access_token, q["sql"], q["params"], iterations
             )
             span_median = {
                 name: _percentile([s[name] for s in spans if name in s], 50)
@@ -172,4 +211,95 @@ async def run_latency(
     return results
 
 
-__all__ = ["LatencyResult", "load_queries", "run_latency"]
+async def run_repetitions(
+    *,
+    repetitions: int,
+    on_repetition: Callable[[int], None] | None = None,
+    **kwargs: Any,
+) -> list[list[LatencyResult]]:
+    """Run the whole measurement ``repetitions`` times, one after the other."""
+    reps: list[list[LatencyResult]] = []
+    for i in range(1, repetitions + 1):
+        if on_repetition is not None:
+            on_repetition(i)
+        reps.append(await run_latency(label=f"[rep {i}/{repetitions}] ", **kwargs))
+    return reps
+
+
+# -- aggregation across repetitions -----------------------------------------------------
+
+METRICS = (
+    "direct_p50",
+    "direct_p95",
+    "wrapper_p50",
+    "wrapper_p95",
+    "gateway_p50",
+    "gateway_p95",
+    "overhead_p50",
+    "overhead_p95",
+)
+
+
+def _r(value: float) -> float:
+    return round(value, 2)
+
+
+def aggregate_repetitions(reps: list[list[LatencyResult]]) -> list[dict[str, Any]]:
+    """Median across repetitions per query, with the spread and every repetition.
+
+    For each metric the reported value is the median of the per-repetition values;
+    ``spread`` holds ``[min, max]`` of them. The overhead is the difference of the
+    reported medians (via pgwarden minus direct), so the table adds up; its spread is the
+    min and max of the per-repetition differences. ``server_timing_median`` is the
+    median across repetitions of each repetition's per-span median.
+    """
+    order: list[str] = []
+    by_query: dict[str, list[LatencyResult]] = {}
+    for rep in reps:
+        for r in rep:
+            if r.query not in by_query:
+                order.append(r.query)
+            by_query.setdefault(r.query, []).append(r)
+    rows: list[dict[str, Any]] = []
+    for query in order:
+        rs = by_query[query]
+        row: dict[str, Any] = {"query": query}
+        spread: dict[str, list[float]] = {}
+        for m in METRICS:
+            values = [getattr(r, m) for r in rs]
+            spread[m] = [_r(min(values)), _r(max(values))]
+            row[m] = _r(median(values))
+        row["overhead_p50"] = _r(row["gateway_p50"] - row["direct_p50"])
+        row["overhead_p95"] = _r(row["gateway_p95"] - row["direct_p95"])
+        spread["overhead_p50"] = [
+            _r(min(r.gateway_p50 - r.direct_p50 for r in rs)),
+            _r(max(r.gateway_p50 - r.direct_p50 for r in rs)),
+        ]
+        spread["overhead_p95"] = [
+            _r(min(r.gateway_p95 - r.direct_p95 for r in rs)),
+            _r(max(r.gateway_p95 - r.direct_p95 for r in rs)),
+        ]
+        row["spread"] = spread
+        spans = sorted({name for r in rs for name in r.server_timing_median})
+        row["server_timing_median"] = {
+            name: _r(
+                median(r.server_timing_median[name] for r in rs if name in r.server_timing_median)
+            )
+            for name in spans
+        }
+        row["repetition_results"] = [{m: _r(getattr(r, m)) for m in METRICS} for r in rs]
+        rows.append(row)
+    return rows
+
+
+__all__ = [
+    "BenchCallError",
+    "LatencyResult",
+    "aggregate_repetitions",
+    "check_call",
+    "fetch_postgres_version",
+    "load_queries",
+    "role_dsn_for",
+    "run_latency",
+    "run_repetitions",
+]

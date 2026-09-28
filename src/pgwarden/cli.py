@@ -267,7 +267,9 @@ def machine_secret_command(
         typer.echo(issued[names[0]])
 
 
-bench_app = typer.Typer(no_args_is_help=True, help="Benchmarks: baselines, latency and load.")
+bench_app = typer.Typer(
+    no_args_is_help=True, help="Benchmarks: baselines, latency, cold start and load."
+)
 app.add_typer(bench_app, name="bench")
 
 
@@ -283,121 +285,219 @@ def _bench_target(target_url: str | None) -> str:
         _fail(str(exc))
 
 
-def _bench_metadata() -> dict[str, object]:
-    import datetime as _dt
+def _bench_client(target_url: str | None, connect_url: str | None) -> Any:
+    from pgwarden.redteam.stack import StackClient
 
-    from pgwarden.redteam.report import _git_commit
+    return StackClient(_bench_target(target_url), connect_url=connect_url or None)
 
-    return {
-        "date": os.environ.get("PGWARDEN_RUN_DATE", _dt.date.today().isoformat()),
-        "git_commit": _git_commit(),
-        "hardware": os.environ.get("PGWARDEN_BENCH_HARDWARE", "unspecified"),
-    }
+
+def _bench_secret_path(explicit: str | None, secret_dir: str | None, machine: str) -> str:
+    if explicit:
+        return explicit
+    if secret_dir:
+        return str(Path(secret_dir) / f"machine-{machine}")
+    _fail("give --machine-secret-file or set PGWARDEN_BENCH_MACHINE_SECRET_DIR")
+
+
+def _emit_bench(document: dict[str, Any], report: str | None, lines: list[str]) -> None:
+    """Write the results JSON to a path, or to stdout for ``--report -``; summary on the rest."""
+    to_stdout = report == "-"
+    if report and not to_stdout:
+        Path(report).parent.mkdir(parents=True, exist_ok=True)
+        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"wrote {report}")
+    for line in lines:
+        typer.echo(line, err=to_stdout)
+    if to_stdout:
+        typer.echo(jsonlib.dumps(document, indent=2))
+
+
+_TARGET_URL = typer.Option(None, "--target-url", help="Gateway public URL (default: from config).")
+_CONNECT_URL = typer.Option(
+    None,
+    "--connect-url",
+    envvar="PGWARDEN_BENCH_CONNECT_URL",
+    help="Where to send requests when the public URL is not reachable (compose network).",
+)
+_SECRET_FILE = typer.Option(None, "--machine-secret-file", help="The machine's client secret.")
+_SECRET_DIR = typer.Option(
+    None,
+    "--machine-secret-dir",
+    envvar="PGWARDEN_BENCH_MACHINE_SECRET_DIR",
+    help="Directory of machine-<name> secret files.",
+)
+_REPORT = typer.Option(None, "--report", help="Write the results JSON here; '-' for stdout.")
 
 
 @bench_app.command("latency")
 def bench_latency_command(
-    target_url: str = typer.Option(None, "--target-url"),
+    target_url: str = _TARGET_URL,
+    connect_url: str = _CONNECT_URL,
     iterations: int = typer.Option(1000, "--iterations"),
     warmup: int = typer.Option(100, "--warmup"),
     repetitions: int = typer.Option(3, "--repetitions"),
     role: str = typer.Option("pw_m_bench_01", "--role", help="Machine login role to time as."),
     machine: str = typer.Option("bench-01", "--machine"),
-    machine_secret_file: str = typer.Option(..., "--machine-secret-file"),
-    report: str = typer.Option(None, "--report"),
+    machine_secret_file: str = _SECRET_FILE,
+    machine_secret_dir: str = _SECRET_DIR,
+    report: str = _REPORT,
 ) -> None:
-    """Measure the gateway's latency overhead against direct Postgres (item 4)."""
-    from statistics import median
+    """Measure the gateway's latency overhead against direct Postgres (item 4).
 
-    from pgwarden.bench.latency import run_latency
-    from pgwarden.redteam.stack import StackClient
+    Runs the three committed query shapes through direct asyncpg, the read-path wrapper and
+    the gateway, ``--repetitions`` times, and reports the median with the spread. Needs the
+    bench config on the gateway (raised rate limits); see README, "Latency and load".
+    """
+    from pgwarden.bench import latency as lat
+    from pgwarden.bench.metadata import collect_metadata
 
-    base = _bench_target(target_url)
+    client = _bench_client(target_url, connect_url)
     target_dsn = _require_env("PGWARDEN_TARGET_DSN")
     role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
-    secret = _require_secret_from_path(machine_secret_file)
+    secret = _require_secret_from_path(
+        _bench_secret_path(machine_secret_file, machine_secret_dir, machine)
+    )
+    config_path = os.environ.get("PGWARDEN_CONFIG")
 
-    async def run() -> list[dict[str, object]]:
-        client = StackClient(base)
+    async def run() -> dict[str, Any]:
         token = await client.machine_token(machine, secret)
-        reps = []
-        for _ in range(repetitions):
-            reps.append(
-                await run_latency(
-                    target_dsn=target_dsn,
-                    role=role,
-                    role_secret=role_secret,
-                    mcp_url=client.resource,
-                    token=token,
-                    iterations=iterations,
-                    warmup=warmup,
-                )
-            )
-        by_query: dict[str, list[Any]] = {}
-        for rep in reps:
-            for r in rep:
-                by_query.setdefault(r.query, []).append(r)
-        rows = []
-        for query, rs in by_query.items():
-            rows.append(
-                {
-                    "query": query,
-                    "direct_p50": round(median(r.direct_p50 for r in rs), 2),
-                    "direct_p95": round(median(r.direct_p95 for r in rs), 2),
-                    "wrapper_p50": round(median(r.wrapper_p50 for r in rs), 2),
-                    "wrapper_p95": round(median(r.wrapper_p95 for r in rs), 2),
-                    "gateway_p50": round(median(r.gateway_p50 for r in rs), 2),
-                    "gateway_p95": round(median(r.gateway_p95 for r in rs), 2),
-                    "overhead_p50": round(median(r.overhead_p50 for r in rs), 2),
-                    "overhead_p95": round(median(r.overhead_p95 for r in rs), 2),
-                    "server_timing_median": rs[-1].server_timing_median,
-                }
-            )
-        return rows
-
-    rows = asyncio.run(run())
-    document = {
-        "command": "pgwarden bench latency",
-        **_bench_metadata(),
-        "iterations": iterations,
-        "warmup": warmup,
-        "repetitions": repetitions,
-        "queries": rows,
-    }
-    if report:
-        from pathlib import Path
-
-        Path(report).parent.mkdir(parents=True, exist_ok=True)
-        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
-        typer.echo(f"wrote {report}")
-    for r in rows:
-        typer.echo(
-            f"{r['query']}: direct p50 {r['direct_p50']} / gateway p50 {r['gateway_p50']} / "
-            f"overhead p50 {r['overhead_p50']} p95 {r['overhead_p95']} ms"
+        version = await lat.fetch_postgres_version(lat.role_dsn_for(target_dsn, role, role_secret))
+        reps = await lat.run_repetitions(
+            repetitions=repetitions,
+            target_dsn=target_dsn,
+            role=role,
+            role_secret=role_secret,
+            client=client,
+            token=token,
+            iterations=iterations,
+            warmup=warmup,
         )
+        return {
+            "command": (
+                f"pgwarden bench latency --iterations {iterations} --warmup {warmup} "
+                f"--repetitions {repetitions}"
+            ),
+            **collect_metadata(config_path=config_path, postgres_version=version),
+            "iterations": iterations,
+            "warmup": warmup,
+            "repetitions": repetitions,
+            "queries": lat.aggregate_repetitions(reps),
+        }
+
+    try:
+        document = asyncio.run(run())
+    except lat.BenchCallError as exc:
+        _fail(str(exc))
+    lines = [
+        f"{r['query']}: direct p50 {r['direct_p50']} / gateway p50 {r['gateway_p50']} / "
+        f"overhead p50 {r['overhead_p50']} p95 {r['overhead_p95']} ms "
+        f"(p50 spread {r['spread']['overhead_p50'][0]} to {r['spread']['overhead_p50'][1]})"
+        for r in document["queries"]
+    ]
+    _emit_bench(document, report, lines)
+
+
+@bench_app.command("cold")
+def bench_cold_command(
+    target_url: str = _TARGET_URL,
+    connect_url: str = _CONNECT_URL,
+    samples: int = typer.Option(30, "--samples"),
+    idle_wait: float = typer.Option(
+        2.5, "--idle-wait", help="Seconds of silence before each call."
+    ),
+    role: str = typer.Option("pw_m_bench_01", "--role"),
+    machine: str = typer.Option("bench-01", "--machine"),
+    machine_secret_file: str = _SECRET_FILE,
+    machine_secret_dir: str = _SECRET_DIR,
+    report: str = _REPORT,
+) -> None:
+    """Cold first-query cost (connect + SCRAM) after the pooled connection was evicted.
+
+    Run it against the gateway started with demo/pgwarden.bench-cold.yaml (pool idle timeout
+    1 s). Says so in the output, instead of a number, when the eviction cannot be confirmed.
+    """
+    from pgwarden.bench import cold
+    from pgwarden.bench.latency import BenchCallError, role_dsn_for
+    from pgwarden.bench.metadata import collect_metadata
+
+    client = _bench_client(target_url, connect_url)
+    target_dsn = _require_env("PGWARDEN_TARGET_DSN")
+    role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
+    secret = _require_secret_from_path(
+        _bench_secret_path(machine_secret_file, machine_secret_dir, machine)
+    )
+    config_path = os.environ.get("PGWARDEN_CONFIG")
+    idle_timeout: int | None = None
+    if config_path:
+        try:
+            idle_timeout = load_config(config_path).pool.idle_timeout_s
+        except ConfigError as exc:
+            _fail(str(exc))
+    if idle_timeout is not None and idle_wait <= idle_timeout:
+        _fail(
+            f"--idle-wait {idle_wait} must exceed the config's pool.idle_timeout_s "
+            f"({idle_timeout}); use the bench-cold config"
+        )
+
+    async def run() -> dict[str, Any]:
+        token = await client.machine_token(machine, secret)
+        found = await cold.run_cold(
+            client=client,
+            token=token,
+            role_dsn=role_dsn_for(target_dsn, role, role_secret),
+            samples=samples,
+            idle_wait_s=idle_wait,
+        )
+        summary = cold.summarize_cold(found, idle_wait_s=idle_wait, idle_timeout_s=idle_timeout)
+        return {
+            "command": f"pgwarden bench cold --samples {samples} --idle-wait {idle_wait:g}",
+            **collect_metadata(config_path=config_path),
+            "cold_start": summary,
+        }
+
+    try:
+        document = asyncio.run(run())
+    except BenchCallError as exc:
+        _fail(str(exc))
+    summary = document["cold_start"]
+    if summary["measured"]:
+        lines = [
+            f"cold first query {summary['cold_first_query_ms']['median']} ms vs warm "
+            f"{summary['warm_query_ms']['median']} ms: cold cost {summary['cold_cost_ms']} ms "
+            f"({summary['confirmed_cold_samples']}/{summary['samples']} samples confirmed cold)"
+        ]
+    else:
+        lines = [f"cold start NOT measured: {summary['reason']}"]
+    _emit_bench(document, report, lines)
 
 
 @bench_app.command("load")
 def bench_load_command(
-    target_url: str = typer.Option(None, "--target-url"),
+    target_url: str = _TARGET_URL,
+    connect_url: str = _CONNECT_URL,
     identities: int = typer.Option(20, "--identities"),
     concurrency: int = typer.Option(20, "--concurrency"),
     duration: int = typer.Option(60, "--duration"),
     mix: str = typer.Option("pk:60,filter:30,agg:10", "--mix"),
-    machine_secret_dir: str = typer.Option(..., "--machine-secret-dir"),
-    report: str = typer.Option(None, "--report"),
+    machine_secret_dir: str = _SECRET_DIR,
+    report: str = _REPORT,
 ) -> None:
-    """Concurrent load test across many machine identities (item 5)."""
-    from pathlib import Path
+    """Concurrent load test across many machine identities (item 5).
 
-    from pgwarden.bench.load import parse_mix, run_load
-    from pgwarden.redteam.stack import StackClient
+    Peak Postgres connections are sampled here only when PGWARDEN_ADMIN_DSN is set (a host
+    run); the benchmark container has no admin credentials, so devtools/bench/run.sh samples
+    them, and the gateway's CPU and RSS, from the host.
+    """
+    from pgwarden.bench.load import parse_mix, result_dict, run_load
+    from pgwarden.bench.metadata import collect_metadata
 
-    base = _bench_target(target_url)
-    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
+    if not machine_secret_dir:
+        _fail("give --machine-secret-dir or set PGWARDEN_BENCH_MACHINE_SECRET_DIR")
+    client = _bench_client(target_url, connect_url)
+    admin_dsn = os.environ.get("PGWARDEN_ADMIN_DSN") or None
+    config_path = os.environ.get("PGWARDEN_CONFIG")
 
-    async def run() -> dict[str, object]:
-        client = StackClient(base)
+    async def run() -> dict[str, Any]:
         tokens = []
         for i in range(1, identities + 1):
             secret = _require_secret_from_path(
@@ -405,26 +505,67 @@ def bench_load_command(
             )
             tokens.append((await client.machine_token(f"bench-{i:02d}", secret)).access_token)
         result = await run_load(
-            mcp_url=client.resource,
+            client=client,
             tokens=tokens,
             admin_dsn=admin_dsn,
             duration_s=float(duration),
             concurrency=concurrency,
             mix=parse_mix(mix),
         )
-        return result.__dict__
+        return result_dict(result)
 
     result = asyncio.run(run())
-    document = {"command": "pgwarden bench load", **_bench_metadata(), "mix": mix, "result": result}
-    if report:
-        Path(report).parent.mkdir(parents=True, exist_ok=True)
-        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
-        typer.echo(f"wrote {report}")
-    typer.echo(
+    document = {
+        "command": (
+            f"pgwarden bench load --identities {identities} --concurrency {concurrency} "
+            f"--duration {duration} --mix {mix}"
+        ),
+        **collect_metadata(config_path=config_path),
+        "mix": mix,
+        "result": result,
+    }
+    peak = result["peak_pg_connections"]
+    lines = [
         f"{result['total_requests']} requests, {result['requests_per_s']} req/s, "
         f"p50 {result['p50_ms']} / p95 {result['p95_ms']} / p99 {result['p99_ms']} ms, "
-        f"error rate {result['error_rate']}, peak PG connections {result['peak_pg_connections']}"
-    )
+        f"errors {result['errors']} (rate {result['error_rate']}), "
+        f"rate-limited {result['rate_limited']}, "
+        f"peak PG connections {peak if peak is not None else 'not sampled here'}"
+    ]
+    _emit_bench(document, report, lines)
+
+
+@bench_app.command("merge")
+def bench_merge_command(
+    kind: str = typer.Argument(..., help="latency, cold or load."),
+    samples_dir: str = typer.Option(..., "--samples-dir", help="Directory the wrapper filled."),
+    out: str = typer.Option(..., "--out", help="Results file to write (cold: to update)."),
+) -> None:
+    """Fold the wrapper's host samples and the container output into a results file.
+
+    Used by devtools/bench/run.sh. ``latency`` and ``load`` write ``--out``; ``cold`` adds the
+    cold-start block to the existing latency file at ``--out``.
+    """
+    from pgwarden.bench import hostmetrics
+
+    directory = Path(samples_dir)
+    target = Path(out)
+    try:
+        if kind == "load":
+            document = hostmetrics.merge_load(directory)
+        elif kind == "latency":
+            document = hostmetrics.merge_latency(directory)
+        elif kind == "cold":
+            if not target.is_file():
+                _fail(f"{out} does not exist: run the latency step first")
+            document = hostmetrics.merge_cold(directory, jsonlib.loads(target.read_text("utf-8")))
+        else:
+            _fail("kind must be latency, cold or load")
+    except (ValueError, KeyError) as exc:
+        _fail(f"cannot merge: {exc}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
+    typer.echo(f"wrote {out}")
 
 
 @bench_app.command("baselines")

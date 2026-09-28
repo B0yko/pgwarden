@@ -99,16 +99,44 @@ def _hidden(html: str, name: str) -> str:
 
 @dataclasses.dataclass
 class StackClient:
+    """Talks to a gateway whose public URL is ``base_url``.
+
+    ``connect_url`` is for a client that cannot reach the public URL, such as the
+    benchmark container on the compose network (``http://gateway:8080`` while the
+    gateway's public URL is ``http://localhost:<port>``). Requests then go to
+    ``connect_url`` with the public host in the ``Host`` header, so the gateway's
+    host check still passes, while the token audience stays the public resource.
+    """
+
     base_url: str
     redirect_uri: str = DEFAULT_REDIRECT_URI
     timeout_s: float = 30.0
+    connect_url: str | None = None
 
     @property
     def resource(self) -> str:
         return f"{self.base_url.rstrip('/')}/mcp"
 
+    @property
+    def origin(self) -> str:
+        """Where requests are actually sent."""
+        return (self.connect_url or self.base_url).rstrip("/")
+
+    @property
+    def mcp_endpoint(self) -> str:
+        """The URL the MCP calls are POSTed to (differs from ``resource`` with ``connect_url``)."""
+        return f"{self.origin}/mcp"
+
     def _http(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(follow_redirects=False, timeout=self.timeout_s)
+        return self.http_client(follow_redirects=False, timeout=self.timeout_s)
+
+    def http_client(self, **kwargs: Any) -> httpx.AsyncClient:
+        """An HTTP client for this gateway, with the public ``Host`` when ``connect_url`` is set."""
+        if self.connect_url:
+            headers = dict(kwargs.pop("headers", None) or {})
+            headers.setdefault("Host", urlsplit(self.base_url).netloc)
+            kwargs["headers"] = headers
+        return httpx.AsyncClient(**kwargs)
 
     async def register_client(self, name: str = "pgwarden red team") -> str:
         async with self._http() as http:
@@ -272,7 +300,7 @@ class StackClient:
     async def machine_token(self, name: str, secret: str) -> Tokens:
         async with self._http() as http:
             resp = await http.post(
-                f"{self.base_url}/oauth/token",
+                f"{self.origin}/oauth/token",
                 auth=(name, secret),
                 data={"grant_type": "client_credentials", "resource": self.resource},
             )
