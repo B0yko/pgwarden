@@ -84,7 +84,8 @@ def main() -> int:
             f"postgresql://pgwarden_app:{app_pw}@postgres:5432/pgwarden?sslmode=disable"
         ),
         idp / "oidc_client_secret": _read(gateway / "oidc_client_secret"),
-        admin / "admin_dsn": f"postgresql://postgres:{pg_pw}@postgres:5432/postgres?sslmode=disable",
+        admin
+        / "admin_dsn": f"postgresql://postgres:{pg_pw}@postgres:5432/postgres?sslmode=disable",
         admin / "admin_dsn_host": (
             f"postgresql://postgres:{pg_pw}@127.0.0.1:{PG_HOST_PORT}/postgres?sslmode=disable"
         ),

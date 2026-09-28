@@ -81,6 +81,16 @@ def test_machine_client_credentials(stack: Stack) -> None:
 
 def test_approval_notice_reaches_mailpit_without_sql(stack: Stack) -> None:
     async def run() -> str:
+        # Clear bob's proposal rate window first: on a reused dev stack earlier
+        # runs may have filled it. A fresh clone starts empty and skips this.
+        conn = await asyncpg.connect(stack.state_dsn, timeout=5)
+        try:
+            await conn.execute(
+                "DELETE FROM pgwarden.rate_windows WHERE scope = 'proposal' "
+                "AND subject = 'person:bob'"
+            )
+        finally:
+            await conn.close()
         client = _client(stack)
         tokens = await client.login("usr_bob")
         out = await call_tool(
