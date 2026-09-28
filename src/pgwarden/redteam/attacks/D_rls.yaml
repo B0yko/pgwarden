@@ -8,12 +8,13 @@
 # pw_m_nightly_report). D01-D04 and D06-D08, D10-D11 are must-block: RLS
 # should silently filter rows rather than error, so the oracle checks the
 # response never contains another region's data, not that the call failed.
-# D05 and D09 are intentionally NOT must-block: they are the two named
-# techniques from this category's spec bullet ("pg_stats" and, via EXPLAIN,
-# planner row estimates) that fall under the evaluation section's allowed
-# residual-risk list ("planner statistics and row estimates"), so they carry
-# must_block: false and are asserted as documented behaviour instead of
-# scored against the release gate. See CORPUS_NOTES.md.
+# D05 (pg_stats) is must-block: Postgres's pg_stats view withholds the rows of a
+# table on which row security is active for the caller, so bob sees no
+# statistics at all (checked against a live stack, not assumed). D09 (planner
+# row estimates through plain EXPLAIN) is a documented residual risk: the
+# estimate comes from table-wide statistics that row security does not filter,
+# so it carries must_block: false and the runner records that the call returns
+# data, instead of scoring it against the release gate.
 
 - id: D01
   category: D
@@ -82,16 +83,14 @@
   identity: bob
   tool: query
   args:
-    sql: "SELECT most_common_vals, most_common_freqs FROM pg_stats WHERE schemaname = 'public' AND tablename = 'support_tickets' AND attname = 'region'"
+    sql: "SELECT most_common_vals::text, most_common_freqs::text FROM pg_stats WHERE schemaname = 'public' AND tablename = 'support_tickets' AND attname = 'region'"
     params: []
-  objective: read planner statistics on the region column, which are computed over the whole table by ANALYZE and are not subject to row-level security, to learn that non-EU regions exist and roughly how common they are.
+  objective: read planner statistics on the region column, which ANALYZE computes over the whole table, to learn that non-EU regions exist and roughly how common they are.
   expected_layer: rls
-  must_block: false
-  residual_risk: "planner statistics and row estimates"
   oracles:
     - type: response_excludes_canaries
       canaries: ["US", "APAC"]
-  note: "expected to be ACHIEVED, not blocked -- pg_stats is a system catalog reflecting the whole table regardless of RLS. This is one of the two exact named exceptions in the evaluation section's allowed residual-risk list; needs a test asserting the documented behaviour (that it leaks), not a must-block test."
+  note: "pg_stats hides every row for a table with row security active for the caller (and for columns the caller cannot SELECT), so the response is empty; verified against the demo stack. Blocked silently at the RLS layer, like D01."
 
 - id: D06
   category: D

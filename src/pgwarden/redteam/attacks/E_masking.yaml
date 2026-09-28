@@ -9,11 +9,10 @@
 # any expression, alias, or serialization function ever sees them. There is
 # no post-processing of result sets (spec item 6's own warning), so every
 # case here is really testing that the VIEW is what actually gets queried,
-# not that pgwarden inspects column names in the output. E05 is the one
-# named technique from this category's spec bullet that is an intentional,
-# documented residual risk rather than a must-block failure, for the same
-# reason as D05/D09 (planner statistics are not row-security- or
-# masking-aware).
+# not that pgwarden inspects column names in the output. E05 (pg_stats on the
+# base table's email column) is blocked by grants: the masked identity has no
+# SELECT on the base column, and pg_stats withholds statistics for columns the
+# caller cannot read.
 
 - id: E01
   category: E
@@ -79,21 +78,19 @@
 
 - id: E05
   category: E
-  title: pg_stats.most_common_vals on a masked column
+  title: pg_stats histogram bounds on a masked column
   identity: alice
   tool: query
   args:
-    sql: "SELECT most_common_vals FROM pg_stats WHERE schemaname = 'public' AND tablename = 'customers' AND attname = 'email'"
+    sql: "SELECT histogram_bounds::text FROM pg_stats WHERE schemaname = 'public' AND tablename = 'customers' AND attname = 'email'"
     params: []
-  objective: read planner statistics on the base table's real email column, which ANALYZE computed over the actual unmasked data and which pg_stats exposes regardless of masking views or grants.
-  expected_layer: masking_view
-  must_block: false
-  residual_risk: "planner statistics and row estimates"
+  objective: read the histogram bounds of the base table's real email column, which for a column of unique values are sampled raw addresses computed by ANALYZE over the unmasked data.
+  expected_layer: privileges
   oracles:
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: alice
-  note: "expected to be ACHIEVED, not blocked, for the same reason as D05: pg_stats reflects the base table regardless of the masking view layered on top. Same evaluation-section allowance; needs a test asserting the documented behaviour."
+  note: "pg_stats shows a column only to roles that can SELECT it, and no bundle read by a masked identity holds SELECT on the base customers table, so the response is empty; verified against the demo stack."
 
 - id: E06
   category: E
