@@ -105,7 +105,7 @@
   identity: bob
   tool: query
   args:
-    sql: "SELECT o.id, (SELECT token FROM billing.payment_methods bp JOIN customers cu ON cu.id = bp.customer_id WHERE cu.id = o.customer_id LIMIT 1) AS t FROM orders o LIMIT 5"
+    sql: "SELECT o.id, (SELECT token FROM billing.payment_methods bp JOIN customers cu ON cu.id = bp.customer_id WHERE cu.id = o.customer_id LIMIT 1) AS t FROM orders o WHERE o.customer_id IN (SELECT customer_id FROM billing.payment_methods) LIMIT 5"
     params: []
   objective: nest the canary read inside a scalar subquery attached to an otherwise-legitimate orders query, on the chance privilege checks are only applied to a statement's outermost relation.
   expected_layer: privileges
@@ -113,6 +113,7 @@
   oracles:
     - type: response_excludes_canaries
       canaries: ["CANARY-PM-"]
+  note: "the outer query is limited to orders of customers that have a payment-method row, so that an unrestricted session really would return a token (the positive control needs the attack to be able to succeed); a session without the grant is stopped at plan time, before any row is read."
 
 - id: G08
   category: G

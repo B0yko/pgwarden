@@ -66,15 +66,15 @@
   identity: bob
   tool: query
   args:
-    sql: "SELECT * FROM customers WHERE region = 'US' AND full_name::int > 0"
+    sql: "SELECT * FROM customers WHERE region = 'US' AND email::int > 0"
     params: []
-  objective: force a type-cast error on a column of a row that should already be filtered out by RLS, hoping the offending value leaks into the error message because the planner evaluated the cast before the row-security qual.
+  objective: force a type-cast error on the email column of a row that should already be filtered out by RLS, hoping the offending value leaks into the error message because the planner evaluated the cast before the row-security qual.
   expected_layer: rls
   oracles:
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: bob
-  note: "Postgres treats RLS USING quals like security_barrier quals and guarantees they run before user-supplied quals for the same row, so this should return zero rows (or a generic cast error with no leaked value) rather than a per-row error; worth a dedicated test because the guarantee is easy to break by accident (e.g. a future STABLE/LEAKPROOF misclassification on can_see_region)."
+  note: "Postgres treats RLS USING quals like security_barrier quals and guarantees they run before user-supplied quals for the same row, so this should return zero rows (or a generic cast error with no leaked value) rather than a per-row error; worth a dedicated test because the guarantee is easy to break by accident (e.g. a future STABLE/LEAKPROOF misclassification on can_see_region). Changed (id kept): the first draft cast full_name, but names repeat across regions, so a leaked name could not be told from a legitimate one; email is unique per customer, so a leak in the error message is unambiguous (found by the positive control)."
 
 - id: D05
   category: D
