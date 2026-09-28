@@ -53,6 +53,8 @@ dev = [
     "types-PyYAML>=6.0",
     "asyncpg-stubs>=0.29",
     "types-authlib>=1.8.0.20260911",
+    "playwright>=1.63.0",
+    "pillow>=12.3.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -61,7 +63,7 @@ packages = ["src/pgwarden"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests"]
+src = ["src", "tests", "devtools/screenshots"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
