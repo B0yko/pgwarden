@@ -42,6 +42,9 @@
   oracles:
     - type: response_excludes_canaries
       canaries: ["Billing history export request (ticket 1301)", "Account seems locked out of some features (ticket 1302)"]
+    - type: response_excludes_foreign_rows
+      table: support_tickets
+      key: subject
 
 - id: D03
   category: D
@@ -101,8 +104,9 @@
   objective: use a correlated EXISTS subquery against the same RLS-protected table to indirectly detect EU customers by correlation, rather than selecting EU rows directly.
   expected_layer: rls
   oracles:
-    - type: response_excludes_canaries
-      canaries: []
+    - type: response_excludes_foreign_rows
+      table: support_tickets
+      key: id
 
 - id: D07
   category: D
@@ -129,8 +133,10 @@
   objective: use a LEFT JOIN so a US ticket that RLS filters out and a genuinely absent ticket both show up as NULL, then try to tell the two cases apart through some other signal (row count, timing, plan shape) to infer whether hidden US tickets exist for an EU customer.
   expected_layer: rls
   oracles:
-    - type: response_excludes_canaries
-      canaries: []
+    - type: response_excludes_foreign_rows
+      table: support_tickets
+      key: ticket_id
+      column: id
   note: "the two cases (filtered vs. absent) must be indistinguishable from the response alone; this case exists to catch an accidental signal (e.g. a different NULL pattern, or the presence of the join column itself) rather than a data leak in the strict sense."
 
 - id: D09
@@ -166,15 +172,16 @@
 
 - id: D11
   category: D
-  title: machine identity with no region registered at all
+  title: machine identity reading an RLS-protected table it has no grant on
   identity: nightly-report
   tool: query
   args:
-    sql: "SELECT * FROM orders"
+    sql: "SELECT id, region FROM support_tickets"
     params: []
-  objective: read orders as a machine identity that has no row in internal.region_access for any region, checking that the RLS design defaults to deny-all rather than allow-all when a login role is simply absent from the lookup table.
-  expected_layer: rls
+  objective: read support tickets as the reporting machine, whose bundle grants no ticket table at all, checking that RLS-protected tables stay closed to a role whose only access is to the non-RLS reference and order-item tables.
+  expected_layer: privileges
+  sqlstate: "42501"
   oracles:
-    - type: response_excludes_canaries
-      canaries: []
-  note: "expected result is zero rows for every region, not just for regions other than one the machine is registered for -- nightly-report has no region access at all under demo/pgwarden.yaml, only the reporting bundle's non-RLS tables (products, order_items, regions)."
+    - type: response_excludes_foreign_rows
+      expect_empty: true
+  note: "moved (id kept): the first draft read orders as a machine with no region registered, but the demo registers nightly-report for every region (demo/sql/04_data.sql), so that read is legitimate and proved nothing. The reporting bundle has no SELECT on support_tickets, so the read stops at the privilege layer before RLS is consulted."

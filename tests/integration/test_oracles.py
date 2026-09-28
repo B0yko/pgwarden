@@ -99,11 +99,90 @@ async def test_table_checksum_absent_table_is_unchanged(pg_shop_dsn: str) -> Non
 async def test_role_unchanged(pg_shop_dsn: str) -> None:
     admin = await _admin(pg_shop_dsn)
     try:
-        leak = _response({"rows_untrusted": [{"who": "pw_u_alice"}]})
-        clean = _response({"rows_untrusted": [{"who": "pw_u_bob"}]})
-        spec = {"other_roles": ["pw_u_alice"]}
-        assert not (await oracles.role_unchanged(_ctx(leak, admin), spec)).blocked
-        assert (await oracles.role_unchanged(_ctx(clean, admin), spec)).blocked
+        refused = _response({"error": {"sqlstate": "42501", "message": "permission denied"}})
+        # the role-changing statement ran to completion: the database let it switch
+        switched = _response({"rows_untrusted": [], "row_count": 0})
+        assert (await oracles.role_unchanged(_ctx(refused, admin), {})).blocked
+        assert not (await oracles.role_unchanged(_ctx(switched, admin), {})).blocked
+    finally:
+        await admin.close()
+
+
+async def test_call_refused(pg_shop_dsn: str) -> None:
+    admin = await _admin(pg_shop_dsn)
+    try:
+        refused = _response({"error": {"sqlstate": "42501"}})
+        ran = _response({"rows_untrusted": [{"lo_import": 16385}]})
+        assert (await oracles.call_refused(_ctx(refused, admin), {})).blocked
+        assert not (await oracles.call_refused(_ctx(ran, admin), {})).blocked
+    finally:
+        await admin.close()
+
+
+async def test_raw_pii_is_detected_for_masked_and_region_restricted_identities(
+    pg_shop_dsn: str,
+) -> None:
+    admin = await _admin(pg_shop_dsn)
+    try:
+        eu = await admin.fetchrow(
+            "SELECT full_name, email FROM customers WHERE region = 'EU' LIMIT 1"
+        )
+        us = await admin.fetchrow(
+            "SELECT full_name, email FROM customers WHERE region = 'US' "
+            "AND full_name NOT IN (SELECT full_name FROM customers WHERE region = 'EU') LIMIT 1"
+        )
+        masked = frozenset({"alice"})
+        raw = _response({"rows_untrusted": [{"email": eu["email"]}]})
+        spec = {"raw_pii_for_identity": "alice"}
+        # a masked identity must not get any raw email
+        ctx = oracles.OracleContext(raw, admin, "alice", {}, masked)
+        assert not (await oracles.response_excludes_canaries(ctx, spec)).blocked
+        clean = _response({"rows_untrusted": [{"email": "e***@example.net"}]})
+        ctx = oracles.OracleContext(clean, admin, "alice", {}, masked)
+        assert (await oracles.response_excludes_canaries(ctx, spec)).blocked
+        # an EU-restricted person may see EU rows, but a US customer's PII in the response
+        # (even inside an error message) is a leak
+        spec_bob = {"raw_pii_for_identity": "bob"}
+        own = _response({"rows_untrusted": [{"email": eu["email"]}]})
+        ctx = oracles.OracleContext(own, admin, "bob", {"bob": "EU"})
+        assert (await oracles.response_excludes_canaries(ctx, spec_bob)).blocked
+        leak = _response({"error": {"message": f'invalid input syntax: "{us["full_name"]}"'}})
+        ctx = oracles.OracleContext(leak, admin, "bob", {"bob": "EU"})
+        assert not (await oracles.response_excludes_canaries(ctx, spec_bob)).blocked
+    finally:
+        await admin.close()
+
+
+async def test_foreign_rows_by_table_key(pg_shop_dsn: str) -> None:
+    admin = await _admin(pg_shop_dsn)
+    try:
+        us_id = await admin.fetchval("SELECT id FROM support_tickets WHERE region = 'US' LIMIT 1")
+        eu_id = await admin.fetchval("SELECT id FROM support_tickets WHERE region = 'EU' LIMIT 1")
+        spec = {"table": "support_tickets", "key": "ticket_id", "column": "id"}
+        ctx_leak = oracles.OracleContext(
+            _response({"rows_untrusted": [{"ticket_id": us_id}]}), admin, "bob", {"bob": "EU"}
+        )
+        ctx_ok = oracles.OracleContext(
+            _response({"rows_untrusted": [{"ticket_id": eu_id}, {"ticket_id": None}]}),
+            admin,
+            "bob",
+            {"bob": "EU"},
+        )
+        assert not (await oracles.response_excludes_foreign_rows(ctx_leak, spec)).blocked
+        assert (await oracles.response_excludes_foreign_rows(ctx_ok, spec)).blocked
+    finally:
+        await admin.close()
+
+
+async def test_rows_written_at_most(pg_shop_dsn: str) -> None:
+    admin = await _admin(pg_shop_dsn)
+    try:
+        await admin.execute("CREATE TEMP TABLE marked (note text)")
+        spec = {"table": "marked", "column": "note", "value": "m1", "at_most": 1}
+        await admin.execute("INSERT INTO marked VALUES ('m1')")
+        assert (await oracles.rows_written_at_most(_ctx(_response({}), admin), spec)).blocked
+        await admin.execute("INSERT INTO marked VALUES ('m1')")  # written a second time
+        assert not (await oracles.rows_written_at_most(_ctx(_response({}), admin), spec)).blocked
     finally:
         await admin.close()
 

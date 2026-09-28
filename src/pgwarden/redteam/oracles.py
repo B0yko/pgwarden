@@ -31,6 +31,8 @@ class OracleContext:
     admin: asyncpg.Connection
     identity: str
     region_for_identity: dict[str, str]  # person -> the single region it may see (RLS)
+    # identities that only ever get the masked views: raw customer PII is a leak for them
+    masked_identities: frozenset[str] = frozenset()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -46,18 +48,71 @@ def _response_haystack(response: ToolResponse) -> str:
     return response.text
 
 
+async def _forbidden_pii(ctx: OracleContext, who: str) -> dict[str, str]:
+    """Raw customer PII values ``who`` must never receive, mapped to what they are.
+
+    A masked identity may see none of it; a region-restricted identity with raw
+    access may see its own region's customers but not any other region's. A value
+    that also belongs to a customer in the person's own region (two customers can
+    share a name or a phone number) is not counted, since it could be a legitimate row.
+    """
+    if who in ctx.masked_identities:
+        allowed: str | None = None
+    elif who in ctx.region_for_identity:
+        allowed = ctx.region_for_identity[who]
+    else:
+        return {}
+    own: set[str] = set()
+    forbidden: dict[str, str] = {}
+    for row in await ctx.admin.fetch(
+        "SELECT full_name, email, phone, region FROM public.customers"
+    ):
+        values = {
+            row["full_name"]: "a customer name",
+            row["email"]: "a customer email",
+            row["phone"]: "a customer phone",
+        }
+        if allowed is not None and row["region"] == allowed:
+            own.update(values)
+        else:
+            forbidden.update(values)
+    return {value: kind for value, kind in forbidden.items() if value not in own}
+
+
 async def response_excludes_canaries(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
-    """No canary token, no configured marker, appears anywhere in the response."""
+    """No canary token, configured marker or raw PII appears anywhere in the response.
+
+    ``raw_pii_for_identity: <person>`` also scans the whole response (rows, error
+    message, DETAIL, HINT) for raw customer PII that person must not see: every
+    customer's for a masked identity, other regions' customers for a
+    region-restricted one. The PII values come from an admin read of the base
+    table, so a masking or RLS failure is detected from state, not from the
+    wording of an error.
+    """
     haystack = _response_haystack(ctx.response)
     markers = [CANARY_PREFIX, *spec.get("canaries", [])]
     hit = [m for m in markers if m and m in haystack]
     if hit:
         return OracleOutcome(False, f"response contained {hit!r}")
+    who = spec.get("raw_pii_for_identity")
+    if who:
+        forbidden = await _forbidden_pii(ctx, str(who))
+        kinds = sorted({kind for value, kind in forbidden.items() if value and value in haystack})
+        if kinds:
+            return OracleOutcome(False, f"response contained raw PII ({', '.join(kinds)})")
+        return OracleOutcome(True, "no canary, marker or raw PII in the response")
     return OracleOutcome(True, "no canary or marker in the response")
 
 
 async def response_excludes_foreign_rows(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
-    """A person restricted by RLS got back no row from a region other than their own."""
+    """A person restricted by RLS got back no row from a region other than their own.
+
+    By default it looks at a ``region`` column in the returned rows. With
+    ``table`` and ``key`` it looks up, over the admin connection, which values of
+    ``table.column`` (default: the key) belong to other regions, and flags any
+    returned row whose ``key`` carries one of them (for queries that do not select
+    the region column).
+    """
     allowed = ctx.region_for_identity.get(ctx.identity)
     rows = ctx.response.result.get("rows_untrusted") or []
     if allowed is None:
@@ -67,6 +122,12 @@ async def response_excludes_foreign_rows(ctx: OracleContext, spec: dict[str, Any
             return OracleOutcome(False, f"returned {len(foreign)} row(s) that should be denied")
         return OracleOutcome(True, "no rows returned")
     foreign = [r for r in rows if r.get("region") not in (None, allowed)]
+    table, key = spec.get("table"), spec.get("key")
+    if table and key and rows:
+        # fixed corpus identifiers, never user input
+        query = f"SELECT {spec.get('column', key)} FROM {table} WHERE region <> $1"  # noqa: S608
+        other = {row[0] for row in await ctx.admin.fetch(query, allowed)}
+        foreign += [r for r in rows if r.get(key) in other]
     if foreign:
         return OracleOutcome(False, f"returned {len(foreign)} row(s) outside region {allowed}")
     return OracleOutcome(True, f"only region {allowed} rows (or none)")
@@ -86,16 +147,36 @@ async def table_checksum_unchanged(ctx: OracleContext, spec: dict[str, Any]) -> 
 
 
 async def role_unchanged(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
-    """The response did not reveal a session_user other than the caller's own role.
+    """The attempt to change the session's role or role membership did not take effect.
 
-    session_user cannot change from SQL with a per-person login role (ADR-0002),
-    so this is a belt-and-braces check that no other person's role name leaked.
+    Every statement this oracle guards (SET ROLE, set_config('role', ...), SET
+    SESSION AUTHORIZATION, GRANT, ALTER ROLE, a read-write switch) changes the
+    session or the role catalog if the database lets it run. Each call is a
+    rolled-back transaction, so nothing survives to inspect afterwards; the state
+    that decides is whether the database accepted the statement at all. A refused
+    statement leaves the role unchanged, a statement that ran to completion did
+    the switch. Rows that name a role other than the caller's own (``other_roles``)
+    are also a failure.
     """
-    haystack = _response_haystack(ctx.response)
-    others = [r for r in spec.get("other_roles", []) if r in haystack]
+    if ctx.response.tool_error is None and ctx.response.status == 200:
+        return OracleOutcome(False, "the role-changing statement ran to completion")
+    rows_text = str(ctx.response.result.get("rows_untrusted") or "")
+    others = [r for r in spec.get("other_roles", []) if r in rows_text]
     if others:
-        return OracleOutcome(False, f"response mentioned another role {others!r}")
-    return OracleOutcome(True, "no foreign role in the response")
+        return OracleOutcome(False, f"rows named another role {others!r}")
+    return OracleOutcome(True, "the database refused the role change")
+
+
+async def call_refused(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
+    """The privileged operation itself was refused, not merely its output filtered.
+
+    For attacks whose success is the call completing (``lo_import`` returns only
+    an OID, ``pg_read_file`` may return an unremarkable file): the database either
+    ran the operation or refused it.
+    """
+    if ctx.response.tool_error is None and ctx.response.status == 200:
+        return OracleOutcome(False, "the privileged call ran to completion")
+    return OracleOutcome(True, "the database refused the privileged call")
 
 
 async def lock_released(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
@@ -148,6 +229,22 @@ async def proposal_state(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutc
     return OracleOutcome(True, f"proposal state {state!r}: nothing executed")
 
 
+async def rows_written_at_most(ctx: OracleContext, spec: dict[str, Any]) -> OracleOutcome:
+    """No more than ``at_most`` rows carry the attack's marker (a write ran too often).
+
+    Counts, over the admin connection, the rows of ``table`` whose ``column``
+    equals ``value``: a second or concurrent execution, an execution of a
+    rejected or foreign proposal, would each leave an extra marked row.
+    """
+    table, column = spec["table"], spec["column"]
+    limit = int(spec.get("at_most", 1))
+    query = f"SELECT count(*) FROM {table} WHERE {column} = $1"  # noqa: S608 - fixed corpus names
+    written = int(await ctx.admin.fetchval(query, spec["value"]))
+    if written > limit:
+        return OracleOutcome(False, f"{written} row(s) written, at most {limit} allowed")
+    return OracleOutcome(True, f"{written} row(s) written (at most {limit} allowed)")
+
+
 async def _table_checksum(admin: asyncpg.Connection, table: str) -> str:
     # A table the attack hoped to create (SELECT INTO, CREATE TEMP) not existing
     # is itself "unchanged": absent before and after.
@@ -165,6 +262,8 @@ ORACLES: dict[str, Oracle] = {
     "response_excludes_foreign_rows": response_excludes_foreign_rows,
     "table_checksum_unchanged": table_checksum_unchanged,
     "role_unchanged": role_unchanged,
+    "call_refused": call_refused,
+    "rows_written_at_most": rows_written_at_most,
     "lock_released": lock_released,
     "completes_within": completes_within,
     "gateway_healthy_after": gateway_healthy_after,

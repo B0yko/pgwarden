@@ -126,6 +126,7 @@
   oracles:
     - type: response_excludes_canaries
       canaries: ["root:"]
+    - type: call_refused
 
 - id: C09
   category: C
@@ -139,8 +140,7 @@
   expected_layer: privileges
   sqlstate: "42501"
   oracles:
-    - type: response_excludes_canaries
-      canaries: ["root:"]
+    - type: call_refused
 
 - id: C10
   category: C
@@ -151,10 +151,9 @@
     sql: "SELECT c.full_name, c.email, c.phone FROM customers c, (SELECT set_config('role', 'support_writer', true)) AS _sw"
     params: []
   objective: switch to bob's own support_writer role (SET/set_config to it is allowed, unlike C01-C03) and use that to read customers columns support_writer itself was never granted, testing the invariant that a writer role's SELECT stays a subset of its bundle's SELECT and that switching to it cannot unlock a table the writer role has no grant on at all.
-  expected_layer: privileges
-  sqlstate: "42501"
+  expected_layer: rls
   oracles:
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: bob
-  note: "the role switch to support_writer itself is expected to succeed (WITH INHERIT FALSE, SET TRUE); the attack is the data read that follows, which must fail because support_writer's own GRANTs (demo/sql/02_bundles.sql) cover only support_tickets(id, region)/UPDATE(status), ticket_notes INSERT and refunds INSERT -- nothing on customers. This is the case spec item 7's invariant explicitly asks for."
+  note: "OBSERVED on the live stack: the statement is not refused. The switch to support_writer inside a FROM subquery only takes effect after the executor has checked privileges as bob (ADR-0002), so it unlocks nothing; bob simply reads customers he is entitled to, and RLS keyed on session_user still limits every returned row to his own region. The oracle scans the whole response for raw PII of any other region. The layer that bounds the read is therefore rls, not privileges (the spec invariant is that a writer-role switch must not widen what is readable). The writer role's own grants cover only support_tickets(id, region) and UPDATE(status), ticket_notes INSERT and refunds INSERT, nothing on customers."
