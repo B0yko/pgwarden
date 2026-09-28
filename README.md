@@ -57,6 +57,10 @@ and a confirmation showing the Postgres role you will use. Then call `whoami`,
 as `bob` to see raw data but only EU rows; propose a write and approve it in
 Mailpit at <http://localhost:8025>. The admin UI is at `/admin`.
 
+A prebuilt multi-arch image of the gateway is published with each release:
+`docker pull ghcr.io/b0yko/pgwarden:0.1.0` (the compose file builds the same image from
+source; `pgwarden serve` is its default command).
+
 The CLI runs without a clone, too:
 
 ```bash
