@@ -78,9 +78,9 @@ Each mitigated row cites test IDs: red-team corpus cases (`redteam:<id>`, in
 | Insufficient authentication / authorization at /mcp | LLM06 | ASI03 | MCP07 | Bearer required, 401 with WWW-Authenticate; unmapped → 403 | test_mcp_gateway.py::test_missing_token_is_401_with_www_authenticate, test_mcp_gateway.py::test_unmapped_identity_is_403 | IdP offboarding lags by ≤8 h unless suspended |
 | Confused deputy — a proxy that consents before naming the client | LLM06 | ASI09 | MCP07 | Per-client consent before the upstream redirect; __Host- cookies | test_oauth_e2e.py::test_consent_csrf_and_browser_binding | — |
 | Lack of audit / telemetry | LLM09 | ASI10 | MCP08 | Append-only hash-chained audit; independent verify | test_audit.py::test_chain_verifies_after_records, test_audit.py::test_superuser_row_edit_is_detected | A superuser can rewrite it and recompute (export head hash) |
-| DNS rebinding / session hijacking | LLM05 | ASI07 | MCP07 | Origin/Host allowlist; stateless (no session to hijack) | test_mcp_gateway.py::test_server_timing_header_present | — |
+| DNS rebinding / session hijacking | LLM05 | ASI07 | MCP07 | Origin/Host allowlist; stateless (no session to hijack) | test_dns_rebinding_guard.py::test_a_foreign_host_header_is_rejected, test_dns_rebinding_guard.py::test_a_foreign_origin_header_is_rejected | — |
 | Approval abuse (self-approval, replay, tamper) | LLM06 | ASI02 | MCP02 | Approver ≠ proposer; signed single-use links; binding hash | test_approvals.py::test_self_approval_is_refused, test_approvals.py::test_tampered_sql_is_refused_at_execution | — |
-| Supply-chain compromise of the gateway's own build/deps | LLM03 | ASI04 | MCP04 | Pinned deps (uv.lock, hashes), digest-pinned images, SHA-pinned actions, Trivy | test present in CI (security.yml) | Upstream compromise before pinning |
+| Supply-chain compromise of the gateway's own build/deps | LLM03 | ASI04 | MCP04 | Pinned deps (uv.lock with hashes), Dockerfile and compose images pinned by digest, actions pinned by commit SHA, a Trivy scan in CI (`security.yml`) | test_supply_chain_pins.py::test_every_action_is_pinned_to_a_commit_sha, test_supply_chain_pins.py::test_dockerfile_base_images_are_pinned_by_digest, test_supply_chain_pins.py::test_uv_lock_records_hashes | Upstream compromise before pinning; CI database service containers use official major-version tags |
 | Data/model poisoning of the underlying model | LLM04 | ASI06 | — | Out of scope: pgwarden does not train or host the model | (not applicable) | The model itself is out of scope |
 | Vector/embedding weaknesses | LLM08 | — | — | Not applicable: pgwarden has no vector store | (not applicable) | — |
 | Misinformation in the model's answer | LLM09 | — | — | Not applicable: pgwarden governs access, not answer quality | (not applicable) | The model may still be wrong |
@@ -98,5 +98,3 @@ attacker's host. pgwarden bounds *what the model can read* to the person's own
 privileges, but cannot control what the person's own client does with a legitimate
 answer. This is reported honestly by `pgwarden redteam llm` (episodes whose final
 answer contains an `exfil.example.net` URL) and is not counted as blocked.
-EOF
-echo "threat-model.md written"

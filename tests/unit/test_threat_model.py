@@ -1,4 +1,4 @@
-"""CI check for docs/threat-model.md (spec item 13 / project check 7).
+"""CI check for docs/threat-model.md.
 
 Asserts that every OWASP ID from all three pinned lists appears in the table, that
 the IDs used match docs/threat-model-ids.yaml, and that every cited test ID exists —
@@ -85,4 +85,4 @@ def test_mitigated_rows_cite_at_least_one_test() -> None:
     for row in rows:
         if "not applicable" in row.lower():
             continue
-        assert "redteam:" in row or ".py::test_" in row or "CI" in row, f"no test cited: {row[:80]}"
+        assert "redteam:" in row or ".py::test_" in row, f"no test cited: {row[:80]}"

@@ -53,6 +53,22 @@ jobs:
           version: "0.12.9"
           python-version: "3.12"
       - run: uv sync --extra bench
+      - name: PgBouncer in transaction mode (the fixture for the doctor's pooler check)
+        run: |
+          password="$(uv run python -c "import tests.conftest as c; from pgwarden.db.scram import derive_password; print(derive_password(c.TEST_ROLE_SECRET, 'pw_u_alice'))")"
+          docker run -d --name pgwarden-testbouncer \
+            --add-host=host.docker.internal:host-gateway \
+            -p 127.0.0.1:55434:5432 \
+            -e DATABASE_URL="postgresql://pw_u_alice:${password}@host.docker.internal:5432/pgw_shop" \
+            -e AUTH_TYPE=plain -e POOL_MODE=transaction -e DEFAULT_POOL_SIZE=1 \
+            -e MAX_CLIENT_CONN=100 -e SERVER_IDLE_TIMEOUT=5 \
+            edoburu/pgbouncer@sha256:4c1ca296ef525f108f5d3552cc337c0c09587cf8dae7f0067fd93349e47dc1cd
+          for _ in $(seq 1 30); do
+            (exec 3<>/dev/tcp/127.0.0.1/55434) 2>/dev/null && exit 0
+            sleep 1
+          done
+          docker logs pgwarden-testbouncer
+          exit 1
       - name: Unit and integration tests (no docker-in-service marker)
         run: uv run pytest -m "not stack" -q
 
@@ -80,13 +96,16 @@ jobs:
         env:
           PGWARDEN_CONFIG: demo/pgwarden.yaml
         run: |
-          export PGWARDEN_ADMIN_DSN="$(sed 's#/postgres?#/shop?#' .pgwarden-dev/admin/admin_dsn)"
-          # the state-DB oracles reach the target DB over the published port
-          export PGWARDEN_ADMIN_DSN="$(sed 's#@postgres:5432#@127.0.0.1:5432#' <<< "$PGWARDEN_ADMIN_DSN")"
+          export PGWARDEN_ADMIN_DSN="$(sed 's#/postgres?#/shop?#' .pgwarden-dev/admin/admin_dsn_host)"
+          # the state DSN lets the run clear its own rate windows: the stack tests above
+          # already used this hour's proposal budget
+          export PGWARDEN_STATE_DSN="$(cat .pgwarden-dev/host/state_dsn_host)"
           export PGWARDEN_MACHINE_SECRET="$(cat .pgwarden-dev/machines/machine-nightly-report)"
-          uv run pgwarden redteam run --target-url http://localhost:8080 --hardware "GitHub Actions ubuntu-latest"
-      - name: Baselines and audit chain
+          uv run pgwarden redteam run --allow-load --target-url http://localhost:8080 --hardware "GitHub Actions ubuntu-latest"
+      - name: Statement-filter baselines
         run: uv run pgwarden bench baselines
+      - name: Audit chain verification after the suite
+        run: docker compose exec -T gateway pgwarden audit verify
       - name: Show gateway logs on failure
         if: failure()
         run: docker compose logs --no-color | tail -200
