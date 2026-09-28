@@ -72,6 +72,8 @@ jobs:
         run: |
           cp .env.example .env
           docker compose up -d --wait
+      - name: Chromium for the MCP Inspector OAuth check
+        run: uv run playwright install --with-deps chromium
       - name: Stack tests
         run: uv run pytest -m stack -q
       - name: Red-team gate (100% must-block, 100% benign)
