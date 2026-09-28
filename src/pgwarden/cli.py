@@ -266,6 +266,43 @@ def machine_secret_command(
         typer.echo(issued[names[0]])
 
 
+bench_app = typer.Typer(no_args_is_help=True, help="Benchmarks: baselines, latency and load.")
+app.add_typer(bench_app, name="bench")
+
+
+@bench_app.command("baselines")
+def bench_baselines_command(
+    report: str = typer.Option(None, "--report", help="Write the results JSON to this path."),
+) -> None:
+    """Run the attack corpus through two statement filters (ADR-0001 evidence).
+
+    A keyword/regex blocklist and a SELECT-only sqlglot allowlist, next to
+    pgwarden's measured 0/0. These filters live only in bench/, never in the
+    product. Needs the `bench` extra (sqlglot).
+    """
+    try:
+        from pgwarden.bench.baselines import run as run_baselines
+    except ModuleNotFoundError as exc:  # pragma: no cover - missing optional extra
+        _fail(f"the bench extra is required (uv sync --extra bench): {exc}")
+    result = run_baselines()
+    if report:
+        from pathlib import Path
+
+        Path(report).parent.mkdir(parents=True, exist_ok=True)
+        Path(report).write_text(jsonlib.dumps(result, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"wrote {report}")
+    typer.echo(
+        f"SQL-bearing attacks: {result['sql_attacks_total']}, "
+        f"benign controls: {result['benign_total']}"
+    )
+    for b in result["baselines"]:
+        typer.echo(
+            f"  {b['baseline']}: {b['attacks_let_through']} attacks let through, "
+            f"{b['benign_wrongly_blocked']} benign wrongly blocked"
+        )
+    typer.echo("  pgwarden: 0 attacks let through, 0 benign wrongly blocked")
+
+
 redteam_app = typer.Typer(no_args_is_help=True, help="Red-team the running gateway.")
 app.add_typer(redteam_app, name="redteam")
 
