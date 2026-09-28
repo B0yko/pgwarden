@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Review write · pgwarden{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block nav %}<span class="who">{{ viewer }}</span>{% endblock %}
+{% block content %}
+<h1>Review a proposed write</h1>
+{% if notice %}<p class="lead"><span class="pill {{ notice_class }}">{{ notice }}</span></p>{% endif %}
+<dl class="facts">
+  <dt>Proposal</dt><dd><code>{{ p.proposal_id }}</code></dd>
+  <dt>State</dt><dd><span class="pill">{{ p.state }}</span></dd>
+  <dt>Proposed by</dt><dd>{{ p.proposer }} as <code>{{ p.pg_role }}</code> (writer <code>{{ p.writer_role }}</code>)</dd>
+  <dt>Reason</dt><dd>{{ p.reason }}</dd>
+  <dt>Operation</dt><dd>{{ p.plan.operation }} on <code>{{ p.plan.relation or "?" }}</code></dd>
+  <dt>Planner estimate</dt><dd>{{ p.plan.estimated_rows if p.plan.estimated_rows is not none else "unknown" }} row(s)</dd>
+  <dt>Row cap</dt><dd>{{ p.max_rows }} (more rows affected rolls the write back)</dd>
+  <dt>Approvable until</dt><dd>{{ p.expires_at }}</dd>
+  {% if p.approver %}<dt>Decided by</dt><dd>{{ p.approver }} at {{ p.decided_at }}</dd>{% endif %}
+  {% if p.grant_expires_at %}<dt>Grant valid until</dt><dd>{{ p.grant_expires_at }}</dd>{% endif %}
+  {% if p.rows_affected is not none %}<dt>Rows affected</dt><dd>{{ p.rows_affected }}</dd>{% endif %}
+  {% if p.error %}<dt>Error</dt><dd>{{ p.error }}</dd>{% endif %}
+</dl>
+<h2>Statement</h2>
+<pre>{{ p.sql }}</pre>
+<h2>Parameters</h2>
+<pre>{{ params_json }}</pre>
+{% if p.state == "pending" %}
+<div class="actions">
+  <form method="post" action="/approve/{{ p.proposal_id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="exp" value="{{ exp }}">
+    <input type="hidden" name="sig" value="{{ sig }}">
+    <button class="primary" type="submit" name="decision" value="approve">Approve</button>
+    <button class="danger" type="submit" name="decision" value="reject">Reject</button>
+  </form>
+</div>
+<p class="muted">Approval creates a single-use grant valid for {{ grant_minutes }} minutes. Only the proposer can then execute it, exactly once.</p>
+{% endif %}
+{% endblock %}

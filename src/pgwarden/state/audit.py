@@ -254,16 +254,98 @@ async def export_events(
         yield buf.getvalue().rstrip("\r\n")
 
 
+@dataclasses.dataclass(frozen=True)
+class AuditFilter:
+    """Filters for the admin audit page and its export (all optional, AND-ed)."""
+
+    identity: str | None = None  # matches identity_sub or identity_email, case-insensitive
+    tool: str | None = None
+    outcome: str | None = None
+    event: str | None = None
+    since: dt.datetime | None = None
+    until: dt.datetime | None = None
+
+    def where(self) -> tuple[str, list[object]]:
+        clauses: list[str] = []
+        args: list[object] = []
+
+        def add(sql: str, value: object) -> None:
+            args.append(value)
+            clauses.append(sql.replace("?", f"${len(args)}"))
+
+        if self.identity:
+            # both placeholders bind the same parameter
+            add("(identity_sub ILIKE ? OR identity_email ILIKE ?)", f"%{self.identity}%")
+        if self.tool:
+            add("tool = ?", self.tool)
+        if self.outcome:
+            add("outcome = ?", self.outcome)
+        if self.event:
+            add("event = ?", self.event)
+        if self.since:
+            add("ts >= ?", self.since)
+        if self.until:
+            add("ts < ?", self.until)
+        return (" WHERE " + " AND ".join(clauses)) if clauses else "", args
+
+
+async def query_events(
+    conn: asyncpg.Connection[Any] | asyncpg.pool.PoolConnectionProxy[Any],
+    flt: AuditFilter,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+    newest_first: bool = True,
+) -> list[asyncpg.Record]:
+    where, args = flt.where()
+    order = "DESC" if newest_first else "ASC"
+    sql = f"SELECT {', '.join(_ALL_COLUMNS)} FROM pgwarden.audit_log{where} ORDER BY seq {order}"
+    if limit is not None:
+        args = [*args, limit, offset]
+        sql += f" LIMIT ${len(args) - 1} OFFSET ${len(args)}"
+    return list(await conn.fetch(sql, *args))
+
+
+def _jsonable_value(name: str, value: object) -> object:
+    if value is None:
+        return None
+    if name in ("prev_hash", "hash"):
+        assert isinstance(value, (bytes, bytearray, memoryview))
+        return bytes(value).hex()
+    if isinstance(value, dt.datetime):
+        return value.astimezone(dt.UTC).isoformat()
+    return value
+
+
+def format_events(rows: list[asyncpg.Record], fmt: Literal["jsonl", "csv"]) -> str:
+    """Render rows as JSON Lines or CSV text (bytea as hex, timestamps in UTC ISO 8601)."""
+    if fmt == "jsonl":
+        return "".join(
+            json.dumps({n: _jsonable_value(n, r[n]) for n in _ALL_COLUMNS}, separators=(",", ":"))
+            + "\n"
+            for r in rows
+        )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(_ALL_COLUMNS)
+    for r in rows:
+        writer.writerow([_jsonable_value(n, r[n]) for n in _ALL_COLUMNS])
+    return buf.getvalue()
+
+
 __all__ = [
     "GENESIS_PREV_HASH",
     "AuditError",
+    "AuditFilter",
     "AuditRecord",
     "Event",
     "Outcome",
     "VerifyResult",
     "compute_row_hash",
     "export_events",
+    "format_events",
     "hash_params",
+    "query_events",
     "record",
     "verify_chain",
 ]
