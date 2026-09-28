@@ -1,13 +1,14 @@
 """pgwarden's command-line interface (Typer).
 
 Only implemented command groups are registered here; groups from later build
-steps (``serve``, ``people``, ``machine``, ``keys``, ``audit``, ``redteam``,
-``bench``, ``report``) are added when they exist.
+steps (``serve``, ``people``, ``machine``, ``keys``, ``redteam``, ``bench``,
+``report``) are added when they exist.
 """
 
 from __future__ import annotations
 
 import asyncio
+import datetime as _datetime
 import json as jsonlib
 import os
 from typing import NoReturn
@@ -37,6 +38,9 @@ masking_app = typer.Typer(
     no_args_is_help=True, help="Column masking: pw_fn functions and pw_masked views."
 )
 app.add_typer(masking_app, name="masking")
+
+audit_app = typer.Typer(no_args_is_help=True, help="Audit log: verify the chain and export events.")
+app.add_typer(audit_app, name="audit")
 
 
 def _fail(message: str) -> NoReturn:
@@ -223,6 +227,72 @@ def doctor_command(
 
     if not report.ok:
         raise typer.Exit(code=1)
+
+
+@audit_app.command("verify")
+def audit_verify_command() -> None:
+    """Walk the hash chain, report the first broken link, and print the head hash.
+
+    Reads PGWARDEN_STATE_DSN (or PGWARDEN_STATE_DSN_FILE). Exits non-zero if the
+    chain is broken. Recomputes every hash in Python, independently of the SQL.
+    """
+    import asyncpg
+
+    from pgwarden.state.audit import verify_chain
+
+    state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+
+    async def run() -> None:
+        conn = await asyncpg.connect(state_dsn, timeout=10)
+        try:
+            result = await verify_chain(conn)
+        finally:
+            await conn.close()
+        if result.ok:
+            typer.secho(f"OK: {result.detail}", fg=typer.colors.GREEN)
+            if result.head_hash is not None:
+                typer.echo(f"head seq: {result.head_seq}")
+                typer.echo(f"head hash: {result.head_hash}")
+        else:
+            typer.secho(
+                f"BROKEN at seq {result.first_broken_seq}: {result.detail}",
+                fg=typer.colors.RED,
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+    asyncio.run(run())
+
+
+@audit_app.command("export")
+def audit_export_command(
+    since: str = typer.Option(None, "--since", help="ISO timestamp; only events at or after it."),
+    fmt: str = typer.Option("jsonl", "--format", help="jsonl or csv."),
+) -> None:
+    """Export audit events as JSON Lines or CSV to stdout."""
+    import asyncpg
+
+    from pgwarden.state.audit import export_events
+
+    if fmt not in ("jsonl", "csv"):
+        _fail("--format must be jsonl or csv")
+    since_dt = None
+    if since is not None:
+        try:
+            since_dt = _datetime.datetime.fromisoformat(since)
+        except ValueError:
+            _fail(f"--since is not a valid ISO timestamp: {since!r}")
+    state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+
+    async def run() -> None:
+        conn = await asyncpg.connect(state_dsn, timeout=10)
+        try:
+            async for line in export_events(conn, since=since_dt, fmt=fmt):  # type: ignore[arg-type]
+                typer.echo(line)
+        finally:
+            await conn.close()
+
+    asyncio.run(run())
 
 
 def main() -> None:

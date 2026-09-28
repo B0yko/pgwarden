@@ -139,6 +139,20 @@ async def db_init(admin_dsn: str, state_dsn: str) -> InitResult:
         await conn.execute(
             f"REVOKE INSERT, UPDATE ON {schema_ident}.schema_migrations FROM {role_ident}"
         )
+        # The audit log is append-only for pgwarden_app: INSERT and SELECT only.
+        # The blanket UPDATE grant above is revoked here (a BEFORE UPDATE/DELETE
+        # trigger and the missing TRUNCATE grant enforce it too, defense in depth).
+        audit_exists = await conn.fetchval(
+            f"SELECT to_regclass('{STATE_SCHEMA}.audit_log') IS NOT NULL"
+        )
+        if audit_exists:
+            await conn.execute(f"REVOKE UPDATE ON {schema_ident}.audit_log FROM {role_ident}")
+        # rate_windows holds transient counters the gateway may prune itself.
+        rate_exists = await conn.fetchval(
+            f"SELECT to_regclass('{STATE_SCHEMA}.rate_windows') IS NOT NULL"
+        )
+        if rate_exists:
+            await conn.execute(f"GRANT DELETE ON {schema_ident}.rate_windows TO {role_ident}")
         await conn.execute(
             f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema_ident} "
             f"GRANT SELECT, INSERT, UPDATE ON TABLES TO {role_ident}"
