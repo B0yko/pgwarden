@@ -1,62 +1,316 @@
 {
-  "command": "pgwarden bench latency",
+  "command": "docker compose --profile bench run --rm bench pgwarden bench latency --iterations 1000 --warmup 100 --repetitions 3",
   "date": "2026-09-28",
-  "git_commit": "9cd30d6",
+  "git_commit": "6edd97f",
+  "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "config_file": "pgwarden.bench.yaml",
+  "config_hash": "fb713f1da5d24904",
   "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
-  "iterations": 300,
-  "warmup": 50,
+  "colima_cpus": 4,
+  "colima_memory_gib": 6,
+  "other_containers": 2,
+  "shared_machine": true,
+  "iterations": 1000,
+  "warmup": 100,
   "repetitions": 3,
   "queries": [
     {
       "query": "primary-key lookup",
-      "direct_p50": 0.92,
-      "direct_p95": 4.16,
-      "wrapper_p50": 9.21,
-      "wrapper_p95": 25.86,
-      "gateway_p50": 12.47,
-      "gateway_p95": 19.76,
-      "overhead_p50": 11.78,
-      "overhead_p95": 15.6,
+      "direct_p50": 0.06,
+      "direct_p95": 0.08,
+      "wrapper_p50": 0.46,
+      "wrapper_p95": 0.57,
+      "gateway_p50": 2.04,
+      "gateway_p95": 2.9,
+      "overhead_p50": 1.98,
+      "overhead_p95": 2.82,
+      "rows": 1,
+      "spread": {
+        "direct_p50": [
+          0.05,
+          0.07
+        ],
+        "direct_p95": [
+          0.07,
+          0.32
+        ],
+        "wrapper_p50": [
+          0.46,
+          0.48
+        ],
+        "wrapper_p95": [
+          0.5,
+          0.75
+        ],
+        "gateway_p50": [
+          1.95,
+          2.38
+        ],
+        "gateway_p95": [
+          2.55,
+          4.02
+        ],
+        "overhead_p50": [
+          1.88,
+          2.32
+        ],
+        "overhead_p95": [
+          2.23,
+          3.95
+        ]
+      },
       "server_timing_median": {
-        "ratelimit": 0.8,
-        "audit": 1.2,
-        "db": 1.7,
-        "auth": 1.1
-      }
+        "audit": 0.3,
+        "auth": 0.2,
+        "db": 0.5,
+        "ratelimit": 0.2
+      },
+      "repetition_results": [
+        {
+          "direct_p50": 0.07,
+          "direct_p95": 0.32,
+          "wrapper_p50": 0.46,
+          "wrapper_p95": 0.75,
+          "gateway_p50": 1.95,
+          "gateway_p95": 2.55,
+          "overhead_p50": 1.88,
+          "overhead_p95": 2.23
+        },
+        {
+          "direct_p50": 0.05,
+          "direct_p95": 0.07,
+          "wrapper_p50": 0.46,
+          "wrapper_p95": 0.5,
+          "gateway_p50": 2.04,
+          "gateway_p95": 2.9,
+          "overhead_p50": 1.99,
+          "overhead_p95": 2.82
+        },
+        {
+          "direct_p50": 0.06,
+          "direct_p95": 0.08,
+          "wrapper_p50": 0.48,
+          "wrapper_p95": 0.57,
+          "gateway_p50": 2.38,
+          "gateway_p95": 4.02,
+          "overhead_p50": 2.32,
+          "overhead_p95": 3.95
+        }
+      ]
     },
     {
       "query": "30-row filtered select",
-      "direct_p50": 1.25,
-      "direct_p95": 3.35,
-      "wrapper_p50": 9.91,
-      "wrapper_p95": 29.1,
-      "gateway_p50": 13.95,
-      "gateway_p95": 24.5,
-      "overhead_p50": 12.7,
-      "overhead_p95": 21.66,
+      "direct_p50": 0.13,
+      "direct_p95": 0.14,
+      "wrapper_p50": 0.6,
+      "wrapper_p95": 0.71,
+      "gateway_p50": 2.4,
+      "gateway_p95": 4.09,
+      "overhead_p50": 2.28,
+      "overhead_p95": 3.95,
+      "rows": 30,
+      "spread": {
+        "direct_p50": [
+          0.12,
+          0.15
+        ],
+        "direct_p95": [
+          0.14,
+          0.19
+        ],
+        "wrapper_p50": [
+          0.58,
+          0.63
+        ],
+        "wrapper_p95": [
+          0.63,
+          0.88
+        ],
+        "gateway_p50": [
+          2.16,
+          2.56
+        ],
+        "gateway_p95": [
+          2.66,
+          4.24
+        ],
+        "overhead_p50": [
+          2.03,
+          2.41
+        ],
+        "overhead_p95": [
+          2.52,
+          4.1
+        ]
+      },
       "server_timing_median": {
-        "ratelimit": 0.8,
-        "audit": 1.2,
-        "db": 2.2,
-        "auth": 1.1
-      }
+        "audit": 0.4,
+        "auth": 0.2,
+        "db": 0.6,
+        "ratelimit": 0.2
+      },
+      "repetition_results": [
+        {
+          "direct_p50": 0.13,
+          "direct_p95": 0.14,
+          "wrapper_p50": 0.58,
+          "wrapper_p95": 0.63,
+          "gateway_p50": 2.16,
+          "gateway_p95": 2.66,
+          "overhead_p50": 2.03,
+          "overhead_p95": 2.52
+        },
+        {
+          "direct_p50": 0.12,
+          "direct_p95": 0.14,
+          "wrapper_p50": 0.6,
+          "wrapper_p95": 0.71,
+          "gateway_p50": 2.4,
+          "gateway_p95": 4.24,
+          "overhead_p50": 2.28,
+          "overhead_p95": 4.1
+        },
+        {
+          "direct_p50": 0.15,
+          "direct_p95": 0.19,
+          "wrapper_p50": 0.63,
+          "wrapper_p95": 0.88,
+          "gateway_p50": 2.56,
+          "gateway_p95": 4.09,
+          "overhead_p50": 2.41,
+          "overhead_p95": 3.9
+        }
+      ]
     },
     {
       "query": "monthly aggregate over orders",
-      "direct_p50": 39.74,
-      "direct_p95": 49.91,
-      "wrapper_p50": 56.37,
-      "wrapper_p95": 88.25,
-      "gateway_p50": 57.67,
-      "gateway_p95": 75.96,
-      "overhead_p50": 16.49,
-      "overhead_p95": 28.23,
+      "direct_p50": 12.57,
+      "direct_p95": 14.87,
+      "wrapper_p50": 13.11,
+      "wrapper_p95": 15.75,
+      "gateway_p50": 15.84,
+      "gateway_p95": 20.48,
+      "overhead_p50": 3.27,
+      "overhead_p95": 5.61,
+      "rows": 24,
+      "spread": {
+        "direct_p50": [
+          12.13,
+          13.49
+        ],
+        "direct_p95": [
+          13.51,
+          16.58
+        ],
+        "wrapper_p50": [
+          12.73,
+          13.39
+        ],
+        "wrapper_p95": [
+          13.99,
+          15.75
+        ],
+        "gateway_p50": [
+          15.42,
+          17.61
+        ],
+        "gateway_p95": [
+          19.54,
+          24.82
+        ],
+        "overhead_p50": [
+          3.27,
+          4.13
+        ],
+        "overhead_p95": [
+          2.96,
+          9.95
+        ]
+      },
       "server_timing_median": {
-        "ratelimit": 2.1,
-        "audit": 2.8,
-        "db": 39.4,
-        "auth": 1.7
-      }
+        "audit": 0.4,
+        "auth": 0.3,
+        "db": 13.5,
+        "ratelimit": 0.2
+      },
+      "repetition_results": [
+        {
+          "direct_p50": 12.13,
+          "direct_p95": 13.51,
+          "wrapper_p50": 12.73,
+          "wrapper_p95": 13.99,
+          "gateway_p50": 15.42,
+          "gateway_p95": 20.48,
+          "overhead_p50": 3.29,
+          "overhead_p95": 6.97
+        },
+        {
+          "direct_p50": 12.57,
+          "direct_p95": 16.58,
+          "wrapper_p50": 13.11,
+          "wrapper_p95": 15.75,
+          "gateway_p50": 15.84,
+          "gateway_p95": 19.54,
+          "overhead_p50": 3.27,
+          "overhead_p95": 2.96
+        },
+        {
+          "direct_p50": 13.49,
+          "direct_p95": 14.87,
+          "wrapper_p50": 13.39,
+          "wrapper_p95": 15.75,
+          "gateway_p50": 17.61,
+          "gateway_p95": 24.82,
+          "overhead_p50": 4.13,
+          "overhead_p95": 9.95
+        }
+      ]
     }
-  ]
+  ],
+  "audit_verify": {
+    "ok": true,
+    "exit_code": 0,
+    "detail": "chain intact through seq 80715",
+    "head_seq": 80715,
+    "head_hash": "c9bc56a889b7f3cd7e0b8c408253b5825b1243a64e1affc71fdb2f607043cbbe"
+  },
+  "cold_start": {
+    "query": "pk_lookup",
+    "pool_idle_timeout_s": 1,
+    "idle_wait_s": 2.5,
+    "samples": 30,
+    "confirmed_cold_samples": 30,
+    "measured": true,
+    "cold_first_query_ms": {
+      "median": 43.13,
+      "min": 19.21,
+      "max": 62.3
+    },
+    "warm_query_ms": {
+      "median": 3.74,
+      "min": 2.4,
+      "max": 10.95
+    },
+    "cold_cost_ms": 39.39,
+    "db_span_cost_ms": 29.75,
+    "server_timing_median": {
+      "cold": {
+        "audit": 1.25,
+        "auth": 2.1,
+        "db": 30.55,
+        "ratelimit": 1.7
+      },
+      "warm": {
+        "audit": 0.6,
+        "auth": 0.4,
+        "db": 0.8,
+        "ratelimit": 0.3
+      }
+    },
+    "command": "docker compose --profile bench run --rm bench pgwarden bench cold --samples 30 --idle-wait 2.5",
+    "config_file": "pgwarden.bench-cold.yaml",
+    "config_hash": "cd786a0be26652a7",
+    "date": "2026-09-28",
+    "git_commit": "6edd97f"
+  }
 }

@@ -192,13 +192,126 @@ in `bench/`, never in the product — the evidence for
 
 ### Latency and load
 
-`docker compose --profile bench run --rm bench pgwarden bench latency` and
-`pgwarden bench load`. Latency overhead is the gateway path minus direct asyncpg,
-per query shape; the load test runs 20 identities at concurrency 20.
-See [docs/results/](docs/results/) for the full JSON, including the `Server-Timing`
-span breakdown. On this shared laptop the primary-key-lookup overhead is around
-10–12 ms p50 (design target: ≤ 10 ms) and the load test sustains ~150 req/s with
-zero non-rate-limited errors; the recorded runs have the exact figures.
+Measured on 2026-09-28 on a MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB.
+The laptop was shared, not idle: the bench client, the gateway and Postgres all ran in
+the same 4-CPU colima VM, two other containers (the test suite's Postgres and PgBouncer)
+were running, and so were other programs. Absolute numbers therefore move from run to
+run (two full 60 s load runs that evening gave 621 and 565 requests/s); read them as an
+orientation for one gateway process on a laptop, not as a capacity claim. Nothing here
+was run on a server.
+
+The client runs in its own `bench` container of the compose stack: the same image as the
+gateway, on the compose network (so every request crosses a network hop), with no Docker
+socket and no admin credentials. It mounts the bench machines' secrets and, for the
+direct-Postgres baselines, the gateway's role secret (the login password of the bench
+role is derived from it), all read-only.
+
+```bash
+# The stack on the bench config: machines bench-01..20 and raised rate limits
+export PGWARDEN_DEMO_CONFIG=pgwarden.bench.yaml
+docker compose up -d --wait
+
+# Latency: 3 repetitions of 1000 timed calls after 100 warm-up calls, per query shape
+docker compose --profile bench run --rm bench pgwarden bench latency --iterations 1000 --warmup 100
+
+# Load: 20 identities at concurrency 20 for 60 s
+docker compose --profile bench run --rm bench pgwarden bench load --identities 20 --concurrency 20 --duration 60 --mix pk:60,filter:30,agg:10
+
+# Cold first query: the same config plus a 1 s pool idle timeout, so the pool is evicted in a pause
+export PGWARDEN_DEMO_CONFIG=pgwarden.bench-cold.yaml
+docker compose up -d --no-deps --wait gateway
+docker compose --profile bench run --rm bench pgwarden bench cold --samples 30 --idle-wait 2.5
+
+# Back to the default demo config
+unset PGWARDEN_DEMO_CONFIG
+docker compose up -d --wait
+```
+
+Those commands print the numbers. The committed files in [docs/results/](docs/results/)
+come from a host wrapper that runs the same commands and adds what the container cannot
+see: the commit, colima's CPUs and memory, the number of other running containers, the
+Postgres version and the config hash, the gateway's CPU, RSS and Postgres connections
+sampled from the host during the load (`docker stats`, `VmRSS` and `pg_stat_activity`,
+several samples a second), and the result of `pgwarden audit verify` after each run:
+
+```bash
+uv sync
+PGWARDEN_BENCH_MACHINE="MacBook Air M5, 24 GB" devtools/bench/run.sh all   # about 8 minutes
+uv run pgwarden report                                                     # regenerates the tables below
+devtools/bench/run.sh restore                                              # default demo config again
+```
+
+`devtools/bench/run.sh latency|cold|load` runs one part (`cold` adds to the latency file).
+The three query shapes are committed in `src/pgwarden/bench/queries.yaml`. In the latency
+table, *Direct* is plain asyncpg from the bench container as the machine role
+`pw_m_bench_01` on a warm connection, *Direct + wrapper* is the read path's own
+`BEGIN READ ONLY` / `set_config` / prepare / fetch / `ROLLBACK` sequence on a pooled
+connection, and *Via pgwarden* is an MCP `tools/call query` over HTTP with a warm token.
+Overhead is the last minus the first. Every timed call must return the row count the
+database returns for the same statement, or the run aborts.
+
+<!-- pgwarden:latency:start -->
+| Query | Direct p50 / p95 | Direct + wrapper p50 / p95 | Via pgwarden p50 / p95 | Overhead p50 / p95 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| primary-key lookup (1 row) | 0.06 / 0.08<br><sub>0.05-0.07 / 0.07-0.32</sub> | 0.46 / 0.57<br><sub>0.46-0.48 / 0.50-0.75</sub> | 2.04 / 2.90<br><sub>1.95-2.38 / 2.55-4.02</sub> | 1.98 / 2.82<br><sub>1.88-2.32 / 2.23-3.95</sub> |
+| 30-row filtered select (30 rows) | 0.13 / 0.14<br><sub>0.12-0.15 / 0.14-0.19</sub> | 0.60 / 0.71<br><sub>0.58-0.63 / 0.63-0.88</sub> | 2.40 / 4.09<br><sub>2.16-2.56 / 2.66-4.24</sub> | 2.28 / 3.95<br><sub>2.03-2.41 / 2.52-4.10</sub> |
+| monthly aggregate over orders (24 rows) | 12.6 / 14.9<br><sub>12.1-13.5 / 13.5-16.6</sub> | 13.1 / 15.8<br><sub>12.7-13.4 / 14.0-15.8</sub> | 15.8 / 20.5<br><sub>15.4-17.6 / 19.5-24.8</sub> | 3.27 / 5.61<br><sub>3.27-4.13 / 2.96-9.95</sub> |
+
+Milliseconds, median of 3 repetitions of 1000 timed calls after 100 warm-up calls each; the small line under a cell is the min-max of the repetitions' p50 / p95. Overhead is via pgwarden minus direct.
+
+`Server-Timing` span medians inside the gateway (ms):
+
+| Query | auth | ratelimit | db | audit |
+| --- | ---: | ---: | ---: | ---: |
+| primary-key lookup | 0.20 | 0.20 | 0.50 | 0.30 |
+| 30-row filtered select | 0.20 | 0.20 | 0.60 | 0.40 |
+| monthly aggregate over orders | 0.30 | 0.20 | 13.5 | 0.40 |
+
+Cold first query after the pooled connection was evicted (connect + SCRAM; primary-key lookup, gateway with `pool.idle_timeout_s: 1`, 2.5 s pause): median 43.1 ms (min 19.2, max 62.3) against 3.74 ms warm, a cold cost of 39.4 ms, of which 29.8 ms in the `db` span. 30 of 30 samples were confirmed cold by a new backend appearing in `pg_stat_activity`.
+
+Design target (overhead p50 <= 10 ms on the primary-key lookup): met, 1.98 ms.
+
+Run: 2026-09-28; commit `6edd97f`; Postgres 16.15; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB; config `pgwarden.bench.yaml` (sha256 fb713f1da5d24904); 2 other containers running on the machine during the run.
+Audit chain verified after the latency run: OK, chain intact through seq 80715.
+<!-- pgwarden:latency:end -->
+
+Reading the latency table: on a primary-key lookup the gateway adds about 2 ms at p50 and
+under 3 ms at p95. The read-path wrapper accounts for about 0.4 ms of that (0.46 against
+0.06 ms), and the `Server-Timing` spans add up to about 1.2 ms of the 2 ms (auth, rate limit
+and audit are each a few tenths of a millisecond); the rest is HTTP and MCP framing and the
+client itself. On the monthly aggregate the query dominates (13.5 ms in `db`) and the gateway
+adds about 3 ms. The cold first query is dominated by opening the database connection
+(TCP, startup, SCRAM): about 30 ms of the extra 39 ms sit in the `db` span, and the other
+few milliseconds are `auth` and `ratelimit` also being slower after a 2.5 s pause, so the
+`db` figure is the better estimate of connect + SCRAM. It is paid once per person or machine
+after a pooled connection was idle for `pool.idle_timeout_s` (60 s by default). The cold run
+uses machine `bench-01`; a person's pool goes through the same connection code.
+
+<!-- pgwarden:load:start -->
+| Measure | Result |
+| --- | --- |
+| Identities | 20 machine identities (bench-01 to bench-20) |
+| Concurrency | 20 |
+| Duration | 60.1 s, mix `pk:60,filter:30,agg:10` |
+| Total requests | 33962 (0 rate-limited) |
+| Requests/s | 565.3 |
+| Latency p50 / p95 / p99 | 26.7 / 94.8 / 160.0 ms |
+| Error rate (rate-limited calls excluded) | 0.00% (0 errors) |
+| Peak Postgres connections (pgwarden roles, `pg_stat_activity`) | 20 |
+| Gateway peak CPU (`docker stats`, percent of one core) | 102.1% (mean 81.2%, 122 samples) |
+| Gateway peak RSS | 95.5 MiB (171 samples) |
+| `pgwarden audit verify` after the run | OK: chain intact through seq 114881, head seq 114881 |
+
+Design target (p95 <= 150 ms with 0 non-rate-limit errors): met (p95 94.8 ms, 0 errors).
+
+Run: 2026-09-28; commit `6edd97f`; Postgres 16.15; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB; config `pgwarden.bench.yaml` (sha256 fb713f1da5d24904); 2 other containers running on the machine during the run.
+<!-- pgwarden:load:end -->
+
+Reading the load table: the design targets were met on this run. The gateway is a single
+process; it averaged 81% of one core and peaked at 102% while the load client shared the
+VM, which suggests one gateway process was close to saturated. Postgres held one
+connection per active identity (peak 20). The design targets are goals, not claims: the
+numbers above are whatever the run measured.
 
 ### LLM indirect-injection run
 

@@ -1,20 +1,47 @@
 {
-  "command": "pgwarden bench load",
+  "command": "docker compose --profile bench run --rm bench pgwarden bench load --identities 20 --concurrency 20 --duration 60 --mix pk:60,filter:30,agg:10",
   "date": "2026-09-28",
-  "git_commit": "9cd30d6",
+  "git_commit": "6edd97f",
+  "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "config_file": "pgwarden.bench.yaml",
+  "config_hash": "fb713f1da5d24904",
   "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
+  "colima_cpus": 4,
+  "colima_memory_gib": 6,
+  "other_containers": 2,
+  "shared_machine": true,
   "mix": "pk:60,filter:30,agg:10",
   "result": {
     "identities": 20,
     "concurrency": 20,
-    "duration_s": 30.1,
-    "total_requests": 4504,
-    "requests_per_s": 149.5,
-    "p50_ms": 123.7,
-    "p95_ms": 220.75,
-    "p99_ms": 264.85,
+    "duration_s": 60.1,
+    "total_requests": 33962,
+    "requests_per_s": 565.3,
+    "p50_ms": 26.72,
+    "p95_ms": 94.83,
+    "p99_ms": 159.99,
+    "errors": 0,
     "error_rate": 0.0,
+    "error_kinds": {},
     "rate_limited": 0,
-    "peak_pg_connections": 7
+    "peak_pg_connections": 20,
+    "peak_pg_connections_source": "pg_stat_activity, sampled once a second from the host"
+  },
+  "host_samples": {
+    "gateway_cpu_percent_of_one_core_peak": 102.1,
+    "gateway_cpu_percent_of_one_core_mean": 81.2,
+    "gateway_cpu_samples": 122,
+    "gateway_rss_mib_peak": 95.5,
+    "gateway_rss_samples": 171,
+    "gateway_container_memory_mib_peak": 87.2,
+    "pg_connections_peak": 20,
+    "pg_connections_samples": 152
+  },
+  "audit_verify": {
+    "ok": true,
+    "exit_code": 0,
+    "detail": "chain intact through seq 114881",
+    "head_seq": 114881,
+    "head_hash": "eef8c5727e26d323e6c30ea05db5d6aca97aa5199b205fbeee83c4c1a5efa47d"
   }
 }
