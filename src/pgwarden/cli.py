@@ -42,6 +42,46 @@ app.add_typer(masking_app, name="masking")
 audit_app = typer.Typer(no_args_is_help=True, help="Audit log: verify the chain and export events.")
 app.add_typer(audit_app, name="audit")
 
+keys_app = typer.Typer(no_args_is_help=True, help="Generate the gateway's secrets and signing key.")
+app.add_typer(keys_app, name="keys")
+
+
+@keys_app.command("generate")
+def keys_generate_command(
+    out: str = typer.Option(..., "--out", help="Directory to write the secret files into."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
+) -> None:
+    """Write PGWARDEN_SIGNING_KEY, PGWARDEN_ROLE_SECRET and PGWARDEN_SESSION_SECRET files.
+
+    Values are written to <out>/{signing_key.pem, role_secret, session_secret}, mode
+    0600. Point the matching *_FILE environment variables at them. Never prints the
+    values themselves.
+    """
+    import os
+    import secrets as _secrets
+    from pathlib import Path
+
+    from pgwarden.oauth.keys import generate_signing_key_pem
+
+    out_dir = Path(out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = {
+        "signing_key.pem": generate_signing_key_pem(),
+        "role_secret": _secrets.token_urlsafe(32) + "\n",
+        "session_secret": _secrets.token_urlsafe(32) + "\n",
+    }
+    written = []
+    for name, value in files.items():
+        path = out_dir / name
+        if path.exists() and not force:
+            _fail(f"{path} already exists; pass --force to overwrite")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(value)
+        written.append(str(path))
+    for path_str in written:
+        typer.echo(f"wrote {path_str}")
+
 
 def _fail(message: str) -> NoReturn:
     typer.secho(message, fg=typer.colors.RED, err=True)
