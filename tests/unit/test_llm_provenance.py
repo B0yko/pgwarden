@@ -771,3 +771,20 @@ def test_cli_keeps_a_partial_run_when_openrouter_keeps_failing(
     assert doc["stop_reason"].startswith("OpenRouterError: gave up after 8 attempts")
     assert len(doc["episodes"]) == 2
     assert doc["per_model"][0]["providers_served"] == {"Alibaba": 2}
+
+
+def test_llm_table_ends_with_the_run_line_when_the_results_carry_one() -> None:
+    doc = _results_doc([_row(QWEN)])
+    doc.update(
+        date="2026-09-28",
+        git_commit="c6cb29a",
+        hardware="MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
+        config_file="pgwarden.llm.yaml",
+        config_hash="3f55c698a58e6159",
+    )
+    last = render_llm_table(doc).rstrip().splitlines()[-1]
+    assert last == (
+        "Run: 2026-09-28; commit `c6cb29a`; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs "
+        "/ 6 GB; config `pgwarden.llm.yaml` (sha256 3f55c698a58e6159)."
+    )
+    assert "Run:" not in render_llm_table(_results_doc([_row(QWEN)]))
