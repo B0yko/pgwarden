@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import Any, NoReturn
 
+import asyncpg
 import typer
 
 from pgwarden.config import (
@@ -342,7 +343,7 @@ def bench_latency_command(
     machine_secret_dir: str = _SECRET_DIR,
     report: str = _REPORT,
 ) -> None:
-    """Measure the gateway's latency overhead against direct Postgres (item 4).
+    """Measure the gateway's latency overhead against direct Postgres.
 
     Runs the three committed query shapes through direct asyncpg, the read-path wrapper and
     the gateway, ``--repetitions`` times, and reports the median with the spread. Needs the
@@ -482,7 +483,7 @@ def bench_load_command(
     machine_secret_dir: str = _SECRET_DIR,
     report: str = _REPORT,
 ) -> None:
-    """Concurrent load test across many machine identities (item 5).
+    """Concurrent load test across many machine identities.
 
     Peak Postgres connections are sampled here only when PGWARDEN_ADMIN_DSN is set (a host
     run); the benchmark container has no admin credentials, so devtools/bench/run.sh samples
@@ -918,6 +919,16 @@ def _fail(message: str) -> NoReturn:
     raise typer.Exit(code=1)
 
 
+def _fail_database(exc: Exception) -> NoReturn:
+    """One-line report of a database error from a provisioning command."""
+    if isinstance(exc, asyncpg.PostgresError):
+        hint = ""
+        if isinstance(exc, asyncpg.InsufficientPrivilegeError):
+            hint = " The admin role needs the privileges listed in docs/own-database.md."
+        _fail(f"PostgreSQL refused the command: {exc} (SQLSTATE {exc.sqlstate}).{hint}")
+    _fail(f"could not reach the database: {exc}")
+
+
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
@@ -979,6 +990,8 @@ def db_init_command() -> None:
         result = asyncio.run(_db_init(admin_dsn, state_dsn))
     except BootstrapError as exc:
         _fail(str(exc))
+    except (asyncpg.PostgresError, OSError) as exc:
+        _fail_database(exc)
 
     if result.role_created:
         typer.echo("created role pgwarden_app")
@@ -1019,7 +1032,12 @@ def roles_sync_command(
         _fail(str(exc))
 
     admin_dsn = _admin_dsn_for_target(admin_dsn, target_dsn)
-    result = asyncio.run(sync_roles(config, admin_dsn, role_secret, dry_run=dry_run, prune=prune))
+    try:
+        result = asyncio.run(
+            sync_roles(config, admin_dsn, role_secret, dry_run=dry_run, prune=prune)
+        )
+    except (asyncpg.PostgresError, OSError) as exc:
+        _fail_database(exc)
     if not result.actions:
         typer.echo("no changes")
         return
@@ -1052,6 +1070,8 @@ def masking_apply_command(
         result = asyncio.run(apply_masking(config, admin_dsn, dry_run=dry_run))
     except MaskingError as exc:
         _fail(str(exc))
+    except (asyncpg.PostgresError, OSError) as exc:
+        _fail_database(exc)
     if not result.actions:
         typer.echo("no changes")
         return

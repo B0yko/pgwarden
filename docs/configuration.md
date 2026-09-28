@@ -126,7 +126,7 @@ Per-person/machine connection pool shape (see ADR-0002).
 
 ### LimitsConfig
 
-Default rate limits, enforced in the state database (see item 9).
+Default rate limits, enforced in the state database (see ADR-0009).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ Default rate limits, enforced in the state database (see item 9).
 
 ### ReadConfig
 
-Defaults applied to every `query` call (see the read path, item 5).
+Defaults applied to every `query` call (see the read path in ADR-0001).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -148,7 +148,7 @@ Defaults applied to every `query` call (see the read path, item 5).
 
 ### WriteConfig
 
-Defaults applied to the write path (see item 7).
+Defaults applied to the write path (see ADR-0006).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -158,7 +158,7 @@ Defaults applied to the write path (see item 7).
 
 ### NotificationsConfig
 
-Where approval notifications go (never SQL or parameters; see item 7).
+Where approval notifications go (never SQL or parameters; see ADR-0006).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

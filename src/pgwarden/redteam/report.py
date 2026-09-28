@@ -59,6 +59,7 @@ async def build_report(
         "hardware": hardware,
         "git_commit": _git_commit(),
         "postgres_version": postgres_version,
+        "config_file": Path(config_path).name if config_path else None,
         "config_hash": _config_hash(config_path),
         "other_containers": other_containers,
         "summary": summarize(results),

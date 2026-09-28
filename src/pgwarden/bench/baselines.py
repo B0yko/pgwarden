@@ -125,7 +125,17 @@ def evaluate(cases: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def run() -> dict[str, Any]:
-    return evaluate(load_corpus())
+    import datetime
+    import os
+
+    from pgwarden.redteam.report import _git_commit
+
+    return {
+        "command": "pgwarden bench baselines",
+        "date": os.environ.get("PGWARDEN_RUN_DATE", datetime.date.today().isoformat()),
+        "git_commit": _git_commit(),
+        **evaluate(load_corpus()),
+    }
 
 
 __all__ = ["BLOCKLIST_PATTERNS", "blocklist_allows", "evaluate", "run", "sqlglot_allows"]

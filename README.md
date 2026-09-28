@@ -216,6 +216,8 @@ the last run; it needs the test Postgres from `devtools/testpg.sh up`).
 | I. OAuth and session | 20 | 20 | oauth |
 
 Benign controls passed: 32 / 32. Documented residual risks: 4.
+
+Run: 2026-09-28; commit `f7a676c`; Postgres 16.15; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB.
 <!-- pgwarden:redteam:end -->
 
 Two behaviours are documented residual risks: they are run and recorded (the call must
@@ -240,6 +242,8 @@ both filters were written for this comparison.
 | keyword/regex blocklist | 54 / 88 | 3 / 29 |
 | sqlglot SELECT-only allowlist | 54 / 88 | 2 / 29 |
 | **pgwarden (database-enforced)** | **0 / 88** | **0 / 29** |
+
+The 88 attacks are the `query` cases of categories A to G that must be blocked; the 29 benign queries are the benign controls that send SQL. The pgwarden row is the red-team run above, not a separate measurement. sqlglot 30.20.0.
 <!-- pgwarden:baselines:end -->
 
 ### Latency and load

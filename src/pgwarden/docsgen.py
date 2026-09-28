@@ -171,6 +171,8 @@ def render_redteam_table(data: dict[str, Any]) -> str:
         f"Benign controls passed: {s['benign_passed']} / {s['benign_total']}. "
         f"Documented residual risks: {len(s['residual_risks'])}."
     )
+    if data.get("date") and data.get("git_commit"):
+        lines += ["", _run_line(data)]
     return "\n".join(lines)
 
 
@@ -243,10 +245,19 @@ def render_baselines_table(data: dict[str, Any]) -> str:
         f"| **pgwarden (database-enforced)** | **0 / {data['sql_attacks_total']}** "
         f"| **0 / {data['benign_total']}** |"
     )
+    lines += [
+        "",
+        f"The {data['sql_attacks_total']} attacks are the `query` cases of categories A to G "
+        f"that must be blocked; the {data['benign_total']} benign queries are the benign "
+        "controls that send SQL. The pgwarden row is the red-team run above, not a separate "
+        f"measurement. sqlglot {data.get('sqlglot_version')}.",
+    ]
+    if data.get("date") and data.get("git_commit"):
+        lines += ["", _run_line(data)]
     return "\n".join(lines)
 
 
-_SPAN_ORDER = ("auth", "ratelimit", "pool", "db", "audit")
+_SPAN_ORDER = ("auth", "ratelimit", "db", "audit")
 LATENCY_TARGET_MS = 10.0
 LOAD_P95_TARGET_MS = 150.0
 
