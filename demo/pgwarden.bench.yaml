@@ -1,0 +1,148 @@
+# Benchmark profile: the demo config plus bench-01..20 machines with raised rate
+# limits. Used only by `pgwarden bench` against the demo stack (item 5 / Data).
+public_url: ${PGWARDEN_PUBLIC_URL:-http://localhost:8080}
+demo:
+  enabled: true
+upstream:
+  name: mock-idp
+  preset: oidc
+  issuer: ${PGWARDEN_OIDC_ISSUER:-http://localhost:9400}
+  discovery_url: http://mock-idp:9400/.well-known/openid-configuration
+  client_id: pgwarden-demo
+  scopes:
+  - openid
+  - email
+  - profile
+people:
+- identity:
+    email: alice@example.com
+  role: alice
+  bundles:
+  - analyst
+- identity:
+    email: bob@example.com
+  role: bob
+  bundles:
+  - support
+  writer: support_writer
+- identity:
+    email: dana@example.com
+  role: dana
+  bundles:
+  - support
+  writer: support_writer
+machines:
+- name: nightly-report
+  role: nightly_report
+  bundles:
+  - reporting
+- name: bench-01
+  role: bench_01
+  bundles:
+  - reporting
+- name: bench-02
+  role: bench_02
+  bundles:
+  - reporting
+- name: bench-03
+  role: bench_03
+  bundles:
+  - reporting
+- name: bench-04
+  role: bench_04
+  bundles:
+  - reporting
+- name: bench-05
+  role: bench_05
+  bundles:
+  - reporting
+- name: bench-06
+  role: bench_06
+  bundles:
+  - reporting
+- name: bench-07
+  role: bench_07
+  bundles:
+  - reporting
+- name: bench-08
+  role: bench_08
+  bundles:
+  - reporting
+- name: bench-09
+  role: bench_09
+  bundles:
+  - reporting
+- name: bench-10
+  role: bench_10
+  bundles:
+  - reporting
+- name: bench-11
+  role: bench_11
+  bundles:
+  - reporting
+- name: bench-12
+  role: bench_12
+  bundles:
+  - reporting
+- name: bench-13
+  role: bench_13
+  bundles:
+  - reporting
+- name: bench-14
+  role: bench_14
+  bundles:
+  - reporting
+- name: bench-15
+  role: bench_15
+  bundles:
+  - reporting
+- name: bench-16
+  role: bench_16
+  bundles:
+  - reporting
+- name: bench-17
+  role: bench_17
+  bundles:
+  - reporting
+- name: bench-18
+  role: bench_18
+  bundles:
+  - reporting
+- name: bench-19
+  role: bench_19
+  bundles:
+  - reporting
+- name: bench-20
+  role: bench_20
+  bundles:
+  - reporting
+approvers:
+- email: carol@example.com
+admins:
+- email: carol@example.com
+masking:
+  columns:
+    public.customers.full_name: name
+    public.customers.email: email
+    public.customers.phone: phone
+  view_grants:
+    public.customers:
+    - analyst
+    - reporting
+  raw_access_bundles:
+  - support
+rls_required:
+- public.customers
+- public.orders
+- public.support_tickets
+- public.ticket_notes
+- public.refunds
+notifications:
+  channels:
+  - log
+  - smtp
+  smtp_from: pgwarden@example.com
+limits:
+  queries_per_minute: 100000
+  proposals_per_hour: 100000
+  registrations_per_hour: 100000

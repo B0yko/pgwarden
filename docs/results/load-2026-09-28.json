@@ -1,0 +1,20 @@
+{
+  "command": "pgwarden bench load",
+  "date": "2026-09-28",
+  "git_commit": "9cd30d6",
+  "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
+  "mix": "pk:60,filter:30,agg:10",
+  "result": {
+    "identities": 20,
+    "concurrency": 20,
+    "duration_s": 30.1,
+    "total_requests": 4504,
+    "requests_per_s": 149.5,
+    "p50_ms": 123.7,
+    "p95_ms": 220.75,
+    "p99_ms": 264.85,
+    "error_rate": 0.0,
+    "rate_limited": 0,
+    "peak_pg_connections": 7
+  }
+}

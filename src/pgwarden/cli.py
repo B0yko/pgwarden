@@ -11,7 +11,7 @@ import asyncio
 import datetime as _datetime
 import json as jsonlib
 import os
-from typing import NoReturn
+from typing import Any, NoReturn
 
 import typer
 
@@ -268,6 +268,162 @@ def machine_secret_command(
 
 bench_app = typer.Typer(no_args_is_help=True, help="Benchmarks: baselines, latency and load.")
 app.add_typer(bench_app, name="bench")
+
+
+def _bench_target(target_url: str | None) -> str:
+    if target_url:
+        return target_url
+    config_path = os.environ.get("PGWARDEN_CONFIG")
+    if not config_path:
+        _fail("give --target-url or set PGWARDEN_CONFIG")
+    try:
+        return load_config(config_path).public_url
+    except ConfigError as exc:
+        _fail(str(exc))
+
+
+def _bench_metadata() -> dict[str, object]:
+    import datetime as _dt
+
+    from pgwarden.redteam.report import _git_commit
+
+    return {
+        "date": os.environ.get("PGWARDEN_RUN_DATE", _dt.date.today().isoformat()),
+        "git_commit": _git_commit(),
+        "hardware": os.environ.get("PGWARDEN_BENCH_HARDWARE", "unspecified"),
+    }
+
+
+@bench_app.command("latency")
+def bench_latency_command(
+    target_url: str = typer.Option(None, "--target-url"),
+    iterations: int = typer.Option(1000, "--iterations"),
+    warmup: int = typer.Option(100, "--warmup"),
+    repetitions: int = typer.Option(3, "--repetitions"),
+    role: str = typer.Option("pw_m_bench_01", "--role", help="Machine login role to time as."),
+    machine: str = typer.Option("bench-01", "--machine"),
+    machine_secret_file: str = typer.Option(..., "--machine-secret-file"),
+    report: str = typer.Option(None, "--report"),
+) -> None:
+    """Measure the gateway's latency overhead against direct Postgres (item 4)."""
+    from statistics import median
+
+    from pgwarden.bench.latency import run_latency
+    from pgwarden.redteam.stack import StackClient
+
+    base = _bench_target(target_url)
+    target_dsn = _require_env("PGWARDEN_TARGET_DSN")
+    role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
+    secret = _require_secret_from_path(machine_secret_file)
+
+    async def run() -> list[dict[str, object]]:
+        client = StackClient(base)
+        token = await client.machine_token(machine, secret)
+        reps = []
+        for _ in range(repetitions):
+            reps.append(
+                await run_latency(
+                    target_dsn=target_dsn,
+                    role=role,
+                    role_secret=role_secret,
+                    mcp_url=client.resource,
+                    token=token,
+                    iterations=iterations,
+                    warmup=warmup,
+                )
+            )
+        by_query: dict[str, list[Any]] = {}
+        for rep in reps:
+            for r in rep:
+                by_query.setdefault(r.query, []).append(r)
+        rows = []
+        for query, rs in by_query.items():
+            rows.append(
+                {
+                    "query": query,
+                    "direct_p50": round(median(r.direct_p50 for r in rs), 2),
+                    "direct_p95": round(median(r.direct_p95 for r in rs), 2),
+                    "wrapper_p50": round(median(r.wrapper_p50 for r in rs), 2),
+                    "wrapper_p95": round(median(r.wrapper_p95 for r in rs), 2),
+                    "gateway_p50": round(median(r.gateway_p50 for r in rs), 2),
+                    "gateway_p95": round(median(r.gateway_p95 for r in rs), 2),
+                    "overhead_p50": round(median(r.overhead_p50 for r in rs), 2),
+                    "overhead_p95": round(median(r.overhead_p95 for r in rs), 2),
+                    "server_timing_median": rs[-1].server_timing_median,
+                }
+            )
+        return rows
+
+    rows = asyncio.run(run())
+    document = {
+        "command": "pgwarden bench latency",
+        **_bench_metadata(),
+        "iterations": iterations,
+        "warmup": warmup,
+        "repetitions": repetitions,
+        "queries": rows,
+    }
+    if report:
+        from pathlib import Path
+
+        Path(report).parent.mkdir(parents=True, exist_ok=True)
+        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"wrote {report}")
+    for r in rows:
+        typer.echo(
+            f"{r['query']}: direct p50 {r['direct_p50']} / gateway p50 {r['gateway_p50']} / "
+            f"overhead p50 {r['overhead_p50']} p95 {r['overhead_p95']} ms"
+        )
+
+
+@bench_app.command("load")
+def bench_load_command(
+    target_url: str = typer.Option(None, "--target-url"),
+    identities: int = typer.Option(20, "--identities"),
+    concurrency: int = typer.Option(20, "--concurrency"),
+    duration: int = typer.Option(60, "--duration"),
+    mix: str = typer.Option("pk:60,filter:30,agg:10", "--mix"),
+    machine_secret_dir: str = typer.Option(..., "--machine-secret-dir"),
+    report: str = typer.Option(None, "--report"),
+) -> None:
+    """Concurrent load test across many machine identities (item 5)."""
+    from pathlib import Path
+
+    from pgwarden.bench.load import parse_mix, run_load
+    from pgwarden.redteam.stack import StackClient
+
+    base = _bench_target(target_url)
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
+
+    async def run() -> dict[str, object]:
+        client = StackClient(base)
+        tokens = []
+        for i in range(1, identities + 1):
+            secret = _require_secret_from_path(
+                str(Path(machine_secret_dir) / f"machine-bench-{i:02d}")
+            )
+            tokens.append((await client.machine_token(f"bench-{i:02d}", secret)).access_token)
+        result = await run_load(
+            mcp_url=client.resource,
+            tokens=tokens,
+            admin_dsn=admin_dsn,
+            duration_s=float(duration),
+            concurrency=concurrency,
+            mix=parse_mix(mix),
+        )
+        return result.__dict__
+
+    result = asyncio.run(run())
+    document = {"command": "pgwarden bench load", **_bench_metadata(), "mix": mix, "result": result}
+    if report:
+        Path(report).parent.mkdir(parents=True, exist_ok=True)
+        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"wrote {report}")
+    typer.echo(
+        f"{result['total_requests']} requests, {result['requests_per_s']} req/s, "
+        f"p50 {result['p50_ms']} / p95 {result['p95_ms']} / p99 {result['p99_ms']} ms, "
+        f"error rate {result['error_rate']}, peak PG connections {result['peak_pg_connections']}"
+    )
 
 
 @bench_app.command("baselines")

@@ -24,6 +24,7 @@ class ToolResponse:
     status: int
     text: str
     body: dict[str, Any] | None
+    headers: dict[str, str] = dataclasses.field(default_factory=dict)
 
     @property
     def result(self) -> dict[str, Any]:
@@ -123,7 +124,10 @@ async def _post(
     except ValueError:
         body = None
     return ToolResponse(
-        status=resp.status_code, text=resp.text, body=body if isinstance(body, dict) else None
+        status=resp.status_code,
+        text=resp.text,
+        body=body if isinstance(body, dict) else None,
+        headers={k.lower(): v for k, v in resp.headers.items()},
     )
 
 

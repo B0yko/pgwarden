@@ -1,0 +1,13 @@
+# Committed query shapes for the latency benchmark (item 4). Parameters are bound.
+- name: pk_lookup
+  label: primary-key lookup
+  sql: "SELECT id, region, status FROM orders WHERE id = $1"
+  params: [12345]
+- name: filtered_select
+  label: 30-row filtered select
+  sql: "SELECT id, region, total_amount FROM orders WHERE region = $1 ORDER BY id LIMIT 30"
+  params: ["EU"]
+- name: monthly_aggregate
+  label: monthly aggregate over orders
+  sql: "SELECT date_trunc('month', order_date) AS m, count(*), sum(total_amount) FROM orders WHERE region = $1 GROUP BY 1 ORDER BY 1"
+  params: ["EU"]

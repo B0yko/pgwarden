@@ -1,0 +1,62 @@
+{
+  "command": "pgwarden bench latency",
+  "date": "2026-09-28",
+  "git_commit": "9cd30d6",
+  "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
+  "iterations": 300,
+  "warmup": 50,
+  "repetitions": 3,
+  "queries": [
+    {
+      "query": "primary-key lookup",
+      "direct_p50": 0.92,
+      "direct_p95": 4.16,
+      "wrapper_p50": 9.21,
+      "wrapper_p95": 25.86,
+      "gateway_p50": 12.47,
+      "gateway_p95": 19.76,
+      "overhead_p50": 11.78,
+      "overhead_p95": 15.6,
+      "server_timing_median": {
+        "ratelimit": 0.8,
+        "audit": 1.2,
+        "db": 1.7,
+        "auth": 1.1
+      }
+    },
+    {
+      "query": "30-row filtered select",
+      "direct_p50": 1.25,
+      "direct_p95": 3.35,
+      "wrapper_p50": 9.91,
+      "wrapper_p95": 29.1,
+      "gateway_p50": 13.95,
+      "gateway_p95": 24.5,
+      "overhead_p50": 12.7,
+      "overhead_p95": 21.66,
+      "server_timing_median": {
+        "ratelimit": 0.8,
+        "audit": 1.2,
+        "db": 2.2,
+        "auth": 1.1
+      }
+    },
+    {
+      "query": "monthly aggregate over orders",
+      "direct_p50": 39.74,
+      "direct_p95": 49.91,
+      "wrapper_p50": 56.37,
+      "wrapper_p95": 88.25,
+      "gateway_p50": 57.67,
+      "gateway_p95": 75.96,
+      "overhead_p50": 16.49,
+      "overhead_p95": 28.23,
+      "server_timing_median": {
+        "ratelimit": 2.1,
+        "audit": 2.8,
+        "db": 39.4,
+        "auth": 1.7
+      }
+    }
+  ]
+}
