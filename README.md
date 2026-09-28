@@ -106,6 +106,48 @@ sequenceDiagram
     pgwarden-->>Client: access token (EdDSA at+jwt, aud = /mcp)
 ```
 
+### A real session
+
+The four screenshots below come from one scripted session against the demo stack:
+MCP Inspector 2.8.0 connects through its own OAuth client (dynamic client
+registration, PKCE, resource indicator), first as `alice`, then as `bob`, and the
+admin page is opened as `carol`.
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/media/01-consent-screen.png" alt="pgwarden consent screen: MCP Inspector asks to query Postgres on the user's behalf, showing the application, the redirect host and the resource URL">
+      <br><b>1. Consent.</b> Before any sign-in, pgwarden names the application, where it
+      sends you back to, and the resource. Only continue if you started the connection.
+    </td>
+    <td width="50%">
+      <img src="docs/media/02-masked-query-alice.png" alt="MCP Inspector showing the result of a query as alice: names reduced to initials and email addresses masked as e***@example.net">
+      <br><b>2. A masked query as alice.</b>
+      <code>SELECT full_name, email FROM customers ORDER BY id LIMIT 5</code>: alice's role
+      can only read the masked view, so names and emails come back masked.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/media/03-approval-email-mailpit.png" alt="Mailpit showing the approval request email sent to the approver: a one-line summary of the proposed update and a signed review link, with no SQL in the message">
+      <br><b>3. An approval request in Mailpit.</b> bob proposed a write. The approver gets a
+      summary and a signed link; the statement and its parameters are shown only on the
+      review page after sign-in.
+    </td>
+    <td width="50%">
+      <img src="docs/media/04-admin-audit.png" alt="pgwarden admin audit page filtered to alice: the masked query with outcome ok, a raw-table read refused with SQLSTATE 42501 and a write refused with SQLSTATE 25006">
+      <br><b>4. The audit log.</b> The admin page (carol) for alice's session: the masked query
+      succeeded, a read of the raw table was refused by Postgres (<code>42501</code>) and a
+      write was refused by the read-only transaction (<code>25006</code>).
+    </td>
+  </tr>
+</table>
+
+`devtools/screenshots/run.py` produces them (headless Chromium, fixed 1440x900
+viewport, page content only, PNG metadata stripped) and fails if the Inspector's
+OAuth flow does not end connected with the tool list visible. It is development
+tooling and is not part of the wheel or the production image.
+
 ## Results
 
 All numbers below come from the commands shown, on a MacBook Air M5, 24 GB, Docker
@@ -224,7 +266,10 @@ emails, reserved fictional phone ranges, and canary tokens that look like
 ## Development
 
 `uv sync`, then `uv run pytest` (unit tests need nothing; integration tests need a
-Postgres 16 via `devtools/testpg.sh up`; stack tests need `docker compose up`).
+Postgres 16 via `devtools/testpg.sh up`; stack tests need `docker compose up`, and the
+MCP Inspector OAuth check also needs `npx` and `uv run playwright install chromium`).
+To regenerate the README screenshots against a running stack:
+`uv run python devtools/screenshots/run.py`.
 `uv run ruff check`, `uv run ruff format --check` and `uv run mypy --strict src/`
 must pass. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
