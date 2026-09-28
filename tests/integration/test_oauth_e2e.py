@@ -455,7 +455,11 @@ async def test_login_creates_a_web_session(gateway: Gateway) -> None:
         callback_url = await _login_at_idp(http, start.headers["location"], "usr_carol")
         done = await http.get(callback_url)
         assert done.status_code == 303 and done.headers["location"] == "/admin/audit"
-        assert "pgw_session=" in done.headers["set-cookie"]
+        session_cookie = done.headers["set-cookie"]
+        assert "pgw_session=" in session_cookie
+        lowered = session_cookie.lower()
+        assert "httponly" in lowered and "samesite=lax" in lowered and "path=/" in lowered
+        assert "secure" not in lowered  # loopback http cannot set Secure
         # an open-redirect attempt collapses to "/"
         evil = await http.get(f"{gateway.base}/login?next=//evil.example.com/x")
         assert evil.status_code == 303 and evil.headers["location"] == "/"

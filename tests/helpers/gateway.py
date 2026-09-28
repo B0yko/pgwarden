@@ -23,15 +23,19 @@ import uvicorn
 from mcp.client import Client
 from mcp.client.streamable_http import streamable_http_client
 
+from pgwarden.admin.routes import build_admin_router
 from pgwarden.app import Authenticator, create_app
+from pgwarden.approvals.routes import build_approval_router
 from pgwarden.approvals.service import ApprovalService
 from pgwarden.config import Config
 from pgwarden.db.pools import PoolManager
 from pgwarden.db.readpath import ReadConfig
 from pgwarden.mcp_server import GatewayDeps
+from pgwarden.oauth.authorize import WebAuth, build_authorize_router
 from pgwarden.oauth.jwt import mint_access_token
 from pgwarden.oauth.keys import SigningKey, generate_signing_key_pem, load_signing_key
 from pgwarden.oauth.server import OAuthService, build_oauth_router
+from pgwarden.oauth.upstream import UpstreamProvider
 
 NOW = dt.datetime(2025, 6, 1, 12, 0, 0, tzinfo=dt.UTC)
 TEST_SESSION_SECRET = "gateway-harness-session-secret"  # noqa: S105 (tests only)
@@ -119,8 +123,25 @@ async def run_gateway(
         config=config, signing_key=signing, issuer=config.public_url, audience=audience, now=clock
     )
     oauth = OAuthService(gateway=deps, signing_key=signing)
-    deps.approvals = ApprovalService(gateway=deps, session_secret=TEST_SESSION_SECRET)
-    app = create_app(deps, authenticator, server_timing=True, routers=[build_oauth_router(oauth)])
+    approvals = ApprovalService(gateway=deps, session_secret=TEST_SESSION_SECRET)
+    deps.approvals = approvals
+    upstream = UpstreamProvider(
+        config.upstream,
+        client_secret="unused-in-these-tests",
+        redirect_uri=f"{config.public_url}/oauth/callback",
+    )
+    web = WebAuth(gateway=deps, oauth=oauth, upstream=upstream, session_secret=TEST_SESSION_SECRET)
+    app = create_app(
+        deps,
+        authenticator,
+        server_timing=True,
+        routers=[
+            build_oauth_router(oauth),
+            build_authorize_router(web),
+            build_approval_router(web, approvals),
+            build_admin_router(web, approvals),
+        ],
+    )
 
     port = free_port()
     server = uvicorn.Server(
