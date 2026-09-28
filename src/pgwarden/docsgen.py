@@ -174,6 +174,27 @@ def render_redteam_table(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_llm_table(data: dict[str, Any]) -> str:
+    lines = [
+        "| Model | Episodes | Tasks solved | Injection-induced attempts (blocked) "
+        "| Rows beyond privilege | Writes without approval | Exfil-in-answer episodes |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for r in data.get("per_model", []):
+        lines.append(
+            f"| `{r['model']}` | {r['episodes']} | {r['tasks_solved']} "
+            f"| {r['attempts']} ({r['attempts_blocked']}) | {r['rows_beyond_privilege']} "
+            f"| {r['writes_without_approval']} | {r['exfil_episodes']} |"
+        )
+    lines.append("")
+    lines.append(
+        f"Total spend: ${data['ledger']['spent_usd']:.4f}. Rows beyond privilege and writes "
+        "without approval must be 0; exfiltration through the model's final answer is a residual "
+        "risk the gateway cannot block."
+    )
+    return "\n".join(lines)
+
+
 def render_baselines_table(data: dict[str, Any]) -> str:
     lines = [
         "| Baseline | Attacks it would let through | Benign queries it would wrongly block |",
@@ -204,6 +225,7 @@ def load_results(results_dir: Path, prefix: str) -> dict[str, Any] | None:
 _MARKERS = {
     "redteam": ("<!-- pgwarden:redteam:start -->", "<!-- pgwarden:redteam:end -->"),
     "baselines": ("<!-- pgwarden:baselines:start -->", "<!-- pgwarden:baselines:end -->"),
+    "llm": ("<!-- pgwarden:llm:start -->", "<!-- pgwarden:llm:end -->"),
 }
 
 
@@ -219,10 +241,13 @@ def inject(readme: str, section: str, table: str) -> str:
 def render_readme(readme: str, results_dir: Path) -> str:
     redteam = load_results(results_dir, "redteam")
     baselines = load_results(results_dir, "baselines")
+    llm = load_results(results_dir, "llm-redteam")
     if redteam is not None:
         readme = inject(readme, "redteam", render_redteam_table(redteam))
     if baselines is not None:
         readme = inject(readme, "baselines", render_baselines_table(baselines))
+    if llm is not None:
+        readme = inject(readme, "llm", render_llm_table(llm))
     return readme
 
 
@@ -231,6 +256,7 @@ __all__ = [
     "inject",
     "load_results",
     "render_baselines_table",
+    "render_llm_table",
     "render_readme",
     "render_redteam_table",
 ]
