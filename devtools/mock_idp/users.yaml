@@ -1,0 +1,27 @@
+# Demo identities for the pgwarden mock OIDC provider.
+# Invented data only: no real people, no real email addresses.
+users:
+  - sub: usr_alice
+    email: alice@example.com
+    email_verified: true
+    name: Alice Anders
+  - sub: usr_bob
+    email: bob@example.com
+    email_verified: true
+    name: Bob Baker
+  - sub: usr_dana
+    email: dana@example.com
+    email_verified: true
+    name: Dana Diaz
+  - sub: usr_carol
+    email: carol@example.com
+    email_verified: true
+    name: Carol Chen
+  - sub: usr_mallory
+    email: mallory@example.org
+    email_verified: true
+    name: Mallory Moss
+  - sub: usr_eve
+    email: eve@example.net
+    email_verified: false
+    name: Eve Ellis

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>pgwarden mock IdP</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 32rem;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      color: #1a1a1a;
+      background: #fff;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    p.notice {
+      background: #fff3cd;
+      border: 1px solid #f0c36d;
+      padding: 0.75rem 1rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    ul { list-style: none; padding: 0; margin-top: 1.5rem; }
+    li { margin: 0.5rem 0; }
+    form { margin: 0; }
+    button {
+      width: 100%;
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #fafafa;
+      cursor: pointer;
+    }
+    button:hover { background: #f0f0f0; }
+    .email { color: #555; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>pgwarden mock IdP</h1>
+  <p class="notice">
+    Development-only identity provider. Choose a demo identity to sign in as.
+    No password is required.
+  </p>
+  <ul>
+    {% for user in users %}
+    <li>
+      <form method="post" action="/authorize/login">
+        <input type="hidden" name="request_id" value="{{ request_id }}">
+        <input type="hidden" name="sub" value="{{ user.sub }}">
+        <button type="submit">
+          {{ user.name }} <span class="email">({{ user.email }})</span>
+        </button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
