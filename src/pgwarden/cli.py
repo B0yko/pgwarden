@@ -197,9 +197,15 @@ app.add_typer(machine_app, name="machine")
 
 @machine_app.command("secret")
 def machine_secret_command(
-    name: str = typer.Argument(..., help="Machine name from pgwarden.yaml."),
+    name: str = typer.Argument(None, help="Machine name from pgwarden.yaml."),
     out_file: str = typer.Option(
         None, "--out-file", help="Write the secret to this file (mode 0600) instead of stdout."
+    ),
+    all_machines: bool = typer.Option(
+        False, "--all", help="Issue a secret for every configured machine (needs --out-dir)."
+    ),
+    out_dir: str = typer.Option(
+        None, "--out-dir", help="With --all: write machine-<name> files into this directory."
     ),
 ) -> None:
     """Issue or rotate a machine's client secret. It is shown once and stored hashed.
@@ -207,6 +213,7 @@ def machine_secret_command(
     Reads PGWARDEN_CONFIG and PGWARDEN_STATE_DSN (or PGWARDEN_STATE_DSN_FILE).
     """
     import secrets as _secrets
+    from pathlib import Path
 
     import asyncpg
 
@@ -217,28 +224,46 @@ def machine_secret_command(
         config = load_config(config_path)
     except ConfigError as exc:
         _fail(str(exc))
-    if not any(m.name == name for m in config.machines):
-        _fail(f"no machine named {name!r} in {config_path}")
+    if all_machines:
+        if not out_dir:
+            _fail("--all needs --out-dir")
+        names = [m.name for m in config.machines]
+    else:
+        if not name:
+            _fail("give a machine name, or --all --out-dir DIR")
+        if not any(m.name == name for m in config.machines):
+            _fail(f"no machine named {name!r} in {config_path}")
+        names = [name]
     state_dsn = _require_secret("PGWARDEN_STATE_DSN")
-    secret = _secrets.token_urlsafe(32)
+    issued = {n: _secrets.token_urlsafe(32) for n in names}
 
     async def run() -> None:
         conn = await asyncpg.connect(state_dsn, timeout=10)
         try:
-            await store.set_machine_secret(
-                conn, name, secret, _datetime.datetime.now(tz=_datetime.UTC)
-            )
+            now = _datetime.datetime.now(tz=_datetime.UTC)
+            for machine, secret in issued.items():
+                await store.set_machine_secret(conn, machine, secret, now)
         finally:
             await conn.close()
 
     asyncio.run(run())
-    if out_file:
-        fd = os.open(out_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+
+    def write(path: str, secret: str) -> None:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(secret + "\n")
-        typer.echo(f"wrote the new secret for {name} to {out_file}")
+
+    if all_machines:
+        assert out_dir is not None
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        for machine, secret in issued.items():
+            write(str(Path(out_dir) / f"machine-{machine}"), secret)
+        typer.echo(f"wrote {len(issued)} machine secret(s) to {out_dir}")
+    elif out_file:
+        write(out_file, issued[names[0]])
+        typer.echo(f"wrote the new secret for {names[0]} to {out_file}")
     else:
-        typer.echo(secret)
+        typer.echo(issued[names[0]])
 
 
 keys_app = typer.Typer(no_args_is_help=True, help="Generate the gateway's secrets and signing key.")
@@ -329,7 +354,7 @@ def db_init_command() -> None:
     names the state database and the pgwarden_app credentials to provision.
     Idempotent: safe to run again.
     """
-    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
     state_dsn = _require_secret("PGWARDEN_STATE_DSN")
 
     try:
@@ -366,7 +391,7 @@ def roles_sync_command(
     PGWARDEN_ROLE_SECRET_FILE).
     """
     config_path = _require_env("PGWARDEN_CONFIG")
-    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
     target_dsn = _require_env("PGWARDEN_TARGET_DSN")
     role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
 
@@ -396,7 +421,7 @@ def masking_apply_command(
     database this command connects to, same as `roles sync`/`doctor`).
     """
     config_path = _require_env("PGWARDEN_CONFIG")
-    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
     target_dsn = _require_env("PGWARDEN_TARGET_DSN")
 
     try:
@@ -436,7 +461,7 @@ def doctor_command(
     probe credential, never sent as the admin DSN).
     """
     config_path = _require_env("PGWARDEN_CONFIG")
-    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
     target_dsn = _require_env("PGWARDEN_TARGET_DSN")
     role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
 
