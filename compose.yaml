@@ -106,6 +106,9 @@ services:
         pgwarden roles sync
         pgwarden masking apply
         pgwarden machine secret --all --out-dir /dev-secrets/machines
+        # the host-side tools (tests, the red-team suite) read these demo secrets; on Linux the
+        # files are otherwise owned by the image's non-root user. Ports bind to 127.0.0.1 only.
+        chmod -R a+rX /dev-secrets/machines
         pgwarden doctor --record
     environment:
       <<: *public-env
