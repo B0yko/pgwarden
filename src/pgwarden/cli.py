@@ -15,7 +15,14 @@ from typing import NoReturn
 
 import typer
 
-from pgwarden.config import ConfigError, load_config
+from pgwarden.config import (
+    Config,
+    ConfigError,
+    PersonConfig,
+    load_config,
+    machine_role_name,
+    person_role_name,
+)
 from pgwarden.db.doctor import run_doctor
 from pgwarden.db.dsn import dbname_from_dsn, with_dbname
 from pgwarden.db.masking import MaskingError, apply_masking, masking_checks
@@ -41,6 +48,148 @@ app.add_typer(masking_app, name="masking")
 
 audit_app = typer.Typer(no_args_is_help=True, help="Audit log: verify the chain and export events.")
 app.add_typer(audit_app, name="audit")
+
+people_app = typer.Typer(no_args_is_help=True, help="People: list, suspend and unsuspend.")
+app.add_typer(people_app, name="people")
+
+
+def _find_person(config: Config, identity: str) -> PersonConfig:
+    wanted = identity.lower()
+    for person in config.people:
+        email = (person.identity.email or "").lower()
+        if wanted in (person.role, person_role_name(person.role), email):
+            return person
+    _fail(f"no person matches {identity!r} (use the role suffix, pw_u_<role> or the email)")
+
+
+def _set_suspended(identity: str, suspended: bool) -> None:
+    import asyncpg
+
+    from pgwarden.identity import person_subject
+    from pgwarden.oauth import store
+
+    config_path = _require_env("PGWARDEN_CONFIG")
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _fail(str(exc))
+    person = _find_person(config, identity)
+    role = person_role_name(person.role)
+    state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+
+    async def run() -> int:
+        now = _datetime.datetime.now(tz=_datetime.UTC)
+        conn = await asyncpg.connect(state_dsn, timeout=10)
+        try:
+            await conn.execute(
+                "INSERT INTO pgwarden.people_status (person_role, suspended, suspended_at, "
+                "suspended_by, updated_at) VALUES ($1, $2, $3, 'cli', $3) "
+                "ON CONFLICT (person_role) DO UPDATE SET suspended = EXCLUDED.suspended, "
+                "suspended_at = EXCLUDED.suspended_at, suspended_by = EXCLUDED.suspended_by, "
+                "updated_at = EXCLUDED.updated_at",
+                role,
+                suspended,
+                now,
+            )
+            revoked = 0
+            if suspended:
+                revoked = await store.revoke_families_for_subject(
+                    conn, person_subject(person.role), "suspended", now
+                )
+            return revoked
+        finally:
+            await conn.close()
+
+    revoked = asyncio.run(run())
+    if suspended:
+        typer.echo(
+            f"suspended {role}: access tokens are refused from now on, {revoked} refresh-token "
+            "session(s) revoked; the gateway closes the pool on the next request it refuses"
+        )
+    else:
+        typer.echo(f"unsuspended {role}")
+
+
+@people_app.command("suspend")
+def people_suspend_command(
+    identity: str = typer.Argument(..., help="Role suffix or email."),
+) -> None:
+    """Suspend a person immediately (tokens refused, refresh sessions revoked)."""
+    _set_suspended(identity, True)
+
+
+@people_app.command("unsuspend")
+def people_unsuspend_command(
+    identity: str = typer.Argument(..., help="Role suffix or email."),
+) -> None:
+    """Lift a suspension. The person signs in again to get new tokens."""
+    _set_suspended(identity, False)
+
+
+@people_app.command("list")
+def people_list_command() -> None:
+    """List configured people and machines with their roles, bundles and status."""
+    import asyncpg
+
+    config_path = _require_env("PGWARDEN_CONFIG")
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _fail(str(exc))
+    state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+
+    async def run() -> dict[str, bool]:
+        conn = await asyncpg.connect(state_dsn, timeout=10)
+        try:
+            rows = await conn.fetch("SELECT person_role, suspended FROM pgwarden.people_status")
+        finally:
+            await conn.close()
+        return {r["person_role"]: bool(r["suspended"]) for r in rows}
+
+    status = asyncio.run(run())
+    for person in config.people:
+        role = person_role_name(person.role)
+        who = person.identity.email or person.identity.subject or person.identity.oid or "?"
+        state = "suspended" if status.get(role) else "active"
+        writer = f" writer={person.writer}" if person.writer else ""
+        typer.echo(f"person  {role:24} {who:28} bundles={','.join(person.bundles)}{writer} {state}")
+    for machine in config.machines:
+        typer.echo(
+            f"machine {machine_role_name(machine.role):24} {machine.name:28} "
+            f"bundles={','.join(machine.bundles)}"
+        )
+
+
+@app.command("serve")
+def serve_command(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (0.0.0.0 in a container)."),
+    port: int = typer.Option(8080, "--port", help="Bind port."),
+    proxy_headers: bool = typer.Option(
+        False, "--proxy-headers", help="Trust X-Forwarded-* from the reverse proxy in front."
+    ),
+) -> None:
+    """Run the gateway (MCP at /mcp, OAuth, consent and approval pages).
+
+    Reads PGWARDEN_CONFIG, PGWARDEN_TARGET_DSN and the server's own secrets (see
+    docs/configuration.md). Refuses to start if PGWARDEN_ADMIN_DSN is present.
+    """
+    import uvicorn
+
+    from pgwarden.wiring import WiringError, build_app
+
+    try:
+        application = build_app()
+    except (WiringError, ConfigError, SecretError, ValueError) as exc:
+        _fail(str(exc))
+    uvicorn.run(
+        application,
+        host=host,
+        port=port,
+        proxy_headers=proxy_headers,
+        forwarded_allow_ips="*" if proxy_headers else None,
+        log_level="info",
+    )
+
 
 machine_app = typer.Typer(no_args_is_help=True, help="Machine (client_credentials) identities.")
 app.add_typer(machine_app, name="machine")
