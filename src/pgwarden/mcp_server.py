@@ -20,7 +20,7 @@ import dataclasses
 import datetime as dt
 import secrets
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import asyncpg
 from mcp.server.mcpserver import Context, MCPServer
@@ -32,6 +32,9 @@ from pgwarden.identity import Principal
 from pgwarden.state import audit, ratelimit
 from pgwarden.state.audit import AuditError
 from pgwarden.timing import Timing
+
+if TYPE_CHECKING:
+    from pgwarden.approvals.service import ApprovalService
 
 
 @dataclasses.dataclass
@@ -49,6 +52,7 @@ class GatewayDeps:
     read_config: ReadConfig
     now: Callable[[], dt.datetime]
     state_pool: asyncpg.Pool[Any] | None = None
+    approvals: ApprovalService | None = None
 
     def require_state_pool(self) -> asyncpg.Pool[Any]:
         if self.state_pool is None:  # pragma: no cover - set in lifespan before any request
@@ -248,7 +252,61 @@ def build_mcp_server(deps: GatewayDeps) -> MCPServer:
             deps, p, ctx, tool="query", sql=sql, params=param_list, audit_sql=True
         )
 
+    @mcp.tool()
+    async def propose_write(
+        ctx: Context,
+        sql: str,
+        params: list[Any] | None = None,
+        reason: str = "",
+        max_rows: int = 1,
+    ) -> dict[str, Any]:
+        """Propose ONE INSERT, UPDATE or DELETE for human approval. It does not run now.
+
+        Use $1, $2, ... placeholders with `params` for every value. A named human
+        approver must approve it; then call execute_approved_write(proposal_id).
+        `max_rows` caps how many rows the statement may affect.
+        """
+        return await _write_call(
+            deps,
+            ctx,
+            lambda svc, p: svc.propose(
+                p,
+                sql=sql,
+                params=list(params or []),
+                reason=reason,
+                max_rows=max_rows,
+                client_id=_client_id(ctx),
+            ),
+        )
+
+    @mcp.tool()
+    async def get_proposal(ctx: Context, proposal_id: str) -> dict[str, Any]:
+        """Show the state of one of your own write proposals."""
+        return await _write_call(deps, ctx, lambda svc, p: svc.get(p, proposal_id))
+
+    @mcp.tool()
+    async def execute_approved_write(ctx: Context, proposal_id: str) -> dict[str, Any]:
+        """Execute your approved proposal, exactly once, within its grant window."""
+        return await _write_call(deps, ctx, lambda svc, p: svc.execute(p, proposal_id))
+
     return mcp
+
+
+async def _write_call(
+    deps: GatewayDeps,
+    ctx: Context,
+    call: Callable[[ApprovalService, Principal], Any],
+) -> dict[str, Any]:
+    from pgwarden.approvals.service import ApprovalError
+
+    principal = _principal(ctx)
+    if deps.approvals is None:
+        return _error(None, "the write path is not enabled on this gateway")
+    try:
+        result: dict[str, Any] = await call(deps.approvals, principal)
+    except ApprovalError as exc:
+        return exc.as_tool_error()
+    return result
 
 
 def _masked_columns_for(config: Config, principal: Principal, schema: str, table: str) -> set[str]:
