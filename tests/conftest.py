@@ -154,3 +154,17 @@ def pg_person_dsn(
         return with_role(pg_shop_dsn, role_name, password)
 
     return _dsn
+
+
+@pytest.fixture(scope="session")
+def pg_demo_masking(pg_shop_dsn: str, pg_demo_config: object, pg_demo_roles: None) -> None:
+    """Runs `masking apply` for the demo config once per session (after roles sync)."""
+    from pgwarden.config import Config
+    from pgwarden.db.masking import apply_masking
+
+    assert isinstance(pg_demo_config, Config)
+
+    async def setup() -> None:
+        await apply_masking(pg_demo_config, pg_shop_dsn, dry_run=False)
+
+    asyncio.run(setup())

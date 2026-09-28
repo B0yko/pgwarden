@@ -51,8 +51,10 @@ async def test_analyst_cannot_read_tickets_or_raw_customers(
     try:
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await conn.fetch("SELECT 1 FROM support_tickets LIMIT 1")
+        # analyst never holds SELECT on the raw base table; the demo grants it
+        # only the pw_masked.customers view (see tests/integration/test_masking.py).
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
-            await conn.fetch("SELECT 1 FROM customers LIMIT 1")
+            await conn.fetch("SELECT 1 FROM public.customers LIMIT 1")
         rows = await conn.fetch("SELECT DISTINCT region FROM orders")
         assert {r["region"] for r in rows} == {"EU", "US", "APAC"}
     finally:
