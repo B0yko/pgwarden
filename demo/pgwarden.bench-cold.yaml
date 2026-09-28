@@ -1,6 +1,7 @@
-# Benchmark profile: the demo config plus bench-01..20 machines with raised rate
-# limits. Used only by the `bench` compose profile (`pgwarden bench latency` and
-# `pgwarden bench load`); select it with PGWARDEN_DEMO_CONFIG=pgwarden.bench.yaml.
+# Cold-start benchmark profile: exactly demo/pgwarden.bench.yaml plus one field, a pool
+# idle timeout of 1 second, so that a pooled connection is evicted during a short pause
+# and the next call pays connect + SCRAM. Used only by `pgwarden bench cold`.
+# A unit test keeps this file equal to the bench profile except for `pool`.
 public_url: ${PGWARDEN_PUBLIC_URL:-http://localhost:8080}
 demo:
   enabled: true
@@ -147,3 +148,5 @@ limits:
   queries_per_minute: 100000
   proposals_per_hour: 100000
   registrations_per_hour: 100000
+pool:
+  idle_timeout_s: 1

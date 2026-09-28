@@ -8,6 +8,10 @@
 #
 # The gateway mounts only its own secret files, read-only. The admin DSN and the
 # Postgres superuser password are mounted only into `init`.
+#
+# Benchmarks (not started by `up`): the `bench` profile runs the latency and load
+# clients in their own container, see the README section "Latency and load" and
+# devtools/bench/run.sh.
 
 name: ${COMPOSE_PROJECT_NAME:-pgwarden}
 
@@ -140,6 +144,45 @@ services:
       - ./.pgwarden-dev/gateway:/run/pgwarden:ro
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+
+  # Benchmark client, only with `--profile bench`. It runs the same pgwarden image as the
+  # gateway on the compose network, so every request crosses a real network hop, and it has
+  # no docker socket and no admin credentials. It logs in to the gateway as the bench
+  # machines (machine secrets, read-only) and, for the direct-asyncpg baselines, to Postgres
+  # as the role pw_m_bench_01. That login password is derived from the gateway's role secret,
+  # so this service (and only this one besides the gateway) mounts that single file read-only.
+  # Start the stack on the bench config first:
+  #   PGWARDEN_DEMO_CONFIG=pgwarden.bench.yaml docker compose up -d --wait
+  #   docker compose --profile bench run --rm bench pgwarden bench latency --iterations 1000 --warmup 100
+  bench:
+    <<: *gateway-image
+    profiles: ["bench"]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    entrypoint: []
+    command: ["pgwarden", "bench", "--help"]
+    environment:
+      <<: *public-env
+      PGWARDEN_CONFIG: /etc/pgwarden/${PGWARDEN_DEMO_CONFIG:-pgwarden.yaml}
+      PGWARDEN_ROLE_SECRET_FILE: /run/pgwarden/role_secret
+      PGWARDEN_BENCH_CONNECT_URL: http://gateway:8080
+      PGWARDEN_BENCH_MACHINE_SECRET_DIR: /run/pgwarden/machines
+      # Facts only the host knows, passed in by devtools/bench/run.sh (empty when run by hand).
+      PGWARDEN_RUN_DATE: ${PGWARDEN_RUN_DATE:-}
+      PGWARDEN_GIT_COMMIT: ${PGWARDEN_GIT_COMMIT:-}
+      PGWARDEN_BENCH_HARDWARE: ${PGWARDEN_BENCH_HARDWARE:-}
+      PGWARDEN_BENCH_COLIMA_CPUS: ${PGWARDEN_BENCH_COLIMA_CPUS:-}
+      PGWARDEN_BENCH_COLIMA_MEMORY_GIB: ${PGWARDEN_BENCH_COLIMA_MEMORY_GIB:-}
+      PGWARDEN_BENCH_OTHER_CONTAINERS: ${PGWARDEN_BENCH_OTHER_CONTAINERS:-}
+      PGWARDEN_BENCH_POSTGRES_VERSION: ${PGWARDEN_BENCH_POSTGRES_VERSION:-}
+    volumes:
+      - ./demo:/etc/pgwarden:ro
+      - ./.pgwarden-dev/machines:/run/pgwarden/machines:ro
+      - ./.pgwarden-dev/gateway/role_secret:/run/pgwarden/role_secret:ro
+    healthcheck:
+      disable: true
+    restart: "no"
 
 volumes:
   pgdata:
