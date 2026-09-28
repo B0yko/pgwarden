@@ -13,9 +13,50 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from pgwarden.config import Config, machine_role_name, person_role_name
+from pgwarden.config import Config, IdentityRef, machine_role_name, person_role_name
 
 PrincipalKind = Literal["person", "machine"]
+
+
+@dataclasses.dataclass(frozen=True)
+class UpstreamIdentity:
+    """An identity asserted by the upstream IdP after a browser login.
+
+    ``subject`` is the immutable identifier: the OIDC ``sub``, the GitHub
+    numeric user id, or ``<tid>:<oid>`` for Entra. ``email_verified`` is what the
+    provider asserts; an email-shaped config entry only matches a verified email.
+    """
+
+    provider: str
+    subject: str
+    email: str | None
+    email_verified: bool
+
+
+def entra_subject(tid: str, oid: str) -> str:
+    return f"{tid}:{oid}"
+
+
+def ref_matches(ref: IdentityRef, ident: UpstreamIdentity) -> bool:
+    """Pure matching of a config identity entry against an upstream identity.
+
+    No state: the email-to-immutable-id binding (refuse the same email with a
+    different id after the first match) is enforced on top of this by the
+    login layer (``pgwarden.oauth.binding``).
+    """
+    if ref.provider is not None and ref.provider != ident.provider:
+        return False
+    if ref.oid is not None and ref.tid is not None:
+        return ident.subject == entra_subject(ref.tid, ref.oid)
+    if ref.subject is not None:
+        return ident.subject == ref.subject
+    if ref.email is not None:
+        return (
+            ident.email_verified
+            and ident.email is not None
+            and ident.email.lower() == ref.email.lower()
+        )
+    return False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -101,6 +142,9 @@ def resolve_principal(config: Config, subject: str) -> Principal | None:
 __all__ = [
     "Principal",
     "PrincipalKind",
+    "UpstreamIdentity",
+    "entra_subject",
+    "ref_matches",
     "machine_subject",
     "person_subject",
     "resolve_principal",

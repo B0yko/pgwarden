@@ -41,3 +41,25 @@ def test_unmapped_subject_is_none() -> None:
     assert resolve_principal(_demo(), person_subject("nobody")) is None
     assert resolve_principal(_demo(), "garbage") is None
     assert resolve_principal(_demo(), machine_subject("no-machine")) is None
+
+
+def test_ref_matches_email_requires_verified() -> None:
+    from pgwarden.config import IdentityRef
+    from pgwarden.identity import UpstreamIdentity, ref_matches
+
+    ref = IdentityRef(email="Carol@example.com")
+    ok = UpstreamIdentity("mock", "sub-carol", "carol@example.com", True)
+    unverified = UpstreamIdentity("mock", "sub-carol", "carol@example.com", False)
+    assert ref_matches(ref, ok)
+    assert not ref_matches(ref, unverified)
+
+
+def test_ref_matches_subject_and_entra() -> None:
+    from pgwarden.config import IdentityRef
+    from pgwarden.identity import UpstreamIdentity, entra_subject, ref_matches
+
+    assert ref_matches(IdentityRef(subject="42"), UpstreamIdentity("gh", "42", None, False))
+    assert not ref_matches(IdentityRef(subject="42"), UpstreamIdentity("gh", "43", None, False))
+    ref = IdentityRef(oid="o1", tid="t1")
+    assert ref_matches(ref, UpstreamIdentity("entra", entra_subject("t1", "o1"), None, False))
+    assert not ref_matches(ref, UpstreamIdentity("entra", entra_subject("t2", "o1"), None, False))

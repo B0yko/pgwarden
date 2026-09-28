@@ -10,20 +10,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-STATE_DIR="${REPO_ROOT}/.pgwarden-test"
+STATE_DIR="${PGWARDEN_TESTPG_STATE_DIR:-${REPO_ROOT}/.pgwarden-test}"
 DSN_FILE="${STATE_DIR}/admin_dsn"
-CONTAINER=pgwarden-testpg
-PORT=55433
+CONTAINER="${PGWARDEN_TESTPG_NAME:-pgwarden-testpg}"
+PORT="${PGWARDEN_TESTPG_PORT:-55433}"
 DOCKER="${DOCKER:-docker}"
 
 # The bouncer fixture: a real PgBouncer in transaction mode, proxying to
 # pgwarden-testpg, so `pgwarden doctor`'s pooler-mode check has a real
 # failing case to detect (see tests/integration/test_doctor.py). Pinned by
 # digest (resolved from edoburu/pgbouncer:latest; PgBouncer 1.25.2 inside).
-BOUNCER_CONTAINER=pgwarden-testbouncer
-BOUNCER_PORT=55434
+BOUNCER_CONTAINER="${PGWARDEN_TESTBOUNCER_NAME:-pgwarden-testbouncer}"
+BOUNCER_PORT="${PGWARDEN_TESTBOUNCER_PORT:-55434}"
 BOUNCER_IMAGE="edoburu/pgbouncer@sha256:4c1ca296ef525f108f5d3552cc337c0c09587cf8dae7f0067fd93349e47dc1cd"
-NETWORK=pgwarden-test-net
+NETWORK="${PGWARDEN_TESTNET_NAME:-pgwarden-test-net}"
 
 # The bouncer proxies to the `pw_u_alice` role in the `pgw_shop` database,
 # using the exact password `pgwarden roles sync` would set for it under the
