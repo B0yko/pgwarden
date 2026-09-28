@@ -420,6 +420,12 @@ def masking_apply_command(
 @app.command("doctor")
 def doctor_command(
     json_output: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+    record: bool = typer.Option(
+        False,
+        "--record",
+        help="Also store the results in the state database (PGWARDEN_STATE_DSN) for the "
+        "admin Health page.",
+    ),
 ) -> None:
     """Environment and privilege checks; exits non-zero if any check fails.
 
@@ -450,10 +456,26 @@ def doctor_command(
         )
     )
 
+    payload = [{"check": r.check, "status": r.status, "message": r.message} for r in report.results]
+    if record:
+        import asyncpg
+
+        state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+
+        async def store_run() -> None:
+            conn = await asyncpg.connect(state_dsn, timeout=10)
+            try:
+                await conn.execute(
+                    "INSERT INTO pgwarden.doctor_runs (ok, results) VALUES ($1, $2::jsonb)",
+                    report.ok,
+                    jsonlib.dumps(payload),
+                )
+            finally:
+                await conn.close()
+
+        asyncio.run(store_run())
+
     if json_output:
-        payload = [
-            {"check": r.check, "status": r.status, "message": r.message} for r in report.results
-        ]
         typer.echo(jsonlib.dumps(payload, indent=2))
     else:
         colors = {

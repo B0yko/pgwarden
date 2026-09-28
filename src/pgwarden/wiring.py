@@ -16,8 +16,10 @@ import os
 
 from fastapi import FastAPI
 
+from pgwarden.admin.routes import build_admin_router
 from pgwarden.app import Authenticator, create_app
 from pgwarden.approvals.notifiers import LogNotifier, Notifier, SlackNotifier, SmtpNotifier
+from pgwarden.approvals.routes import build_approval_router
 from pgwarden.approvals.service import ApprovalService
 from pgwarden.config import Config, load_config
 from pgwarden.db.pools import PoolManager
@@ -99,9 +101,10 @@ def build_app() -> FastAPI:
         read_config=ReadConfig(**config.read.model_dump()),
         now=_utcnow,
     )
-    deps.approvals = ApprovalService(
+    approvals = ApprovalService(
         gateway=deps, session_secret=session_secret, notifiers=build_notifiers(config)
     )
+    deps.approvals = approvals
     oauth = OAuthService(gateway=deps, signing_key=signing)
     public_url = config.public_url.rstrip("/")
     upstream = UpstreamProvider(
@@ -117,7 +120,12 @@ def build_app() -> FastAPI:
         audience=canonical_resource(public_url),
         now=_utcnow,
     )
-    routers = [build_oauth_router(oauth), build_authorize_router(web)]
+    routers = [
+        build_oauth_router(oauth),
+        build_authorize_router(web),
+        build_approval_router(web, approvals),
+        build_admin_router(web, approvals),
+    ]
     return create_app(
         deps,
         authenticator,
