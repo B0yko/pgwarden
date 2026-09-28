@@ -754,6 +754,9 @@ def redteam_run_command(
     hardware: str = typer.Option(
         "unspecified", "--hardware", help="Hardware string for the report."
     ),
+    other_containers: int = typer.Option(
+        None, "--other-containers", help="Number of other running containers, for the report."
+    ),
 ) -> None:
     """Run the deterministic red-team suite against a deployment and report per category.
 
@@ -805,6 +808,7 @@ def redteam_run_command(
             date=os.environ.get("PGWARDEN_RUN_DATE", _dt.date.today().isoformat()),
             hardware=hardware,
             command="pgwarden redteam run",
+            other_containers=other_containers,
         )
 
     document = asyncio.run(run())

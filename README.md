@@ -148,6 +148,28 @@ viewport, page content only, PNG metadata stripped) and fails if the Inspector's
 OAuth flow does not end connected with the tool list visible. It is development
 tooling and is not part of the wheel or the production image.
 
+### The approval flow
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP client
+    participant pgwarden
+    participant DB as Postgres (writer role)
+    participant Approver as Approver (browser)
+    Client->>pgwarden: propose_write (SQL, params, reason)
+    pgwarden->>DB: EXPLAIN (FORMAT JSON) as the person's writer role
+    DB-->>pgwarden: plan, accepted only with one Insert/Update/Delete root
+    pgwarden->>Approver: notice with a summary and a signed link, never the SQL
+    Approver->>pgwarden: open the link, sign in, review the exact statement
+    Approver->>pgwarden: approve (CSRF POST), not the proposer
+    pgwarden-->>Client: single-use grant, valid 15 minutes
+    Client->>pgwarden: execute_approved_write
+    pgwarden->>pgwarden: check proposer and binding, claim the grant atomically, audit "started"
+    pgwarden->>DB: run the stored statement in a read-write transaction
+    DB-->>pgwarden: rows affected (more than max_rows rolls back)
+    pgwarden-->>Client: result, audited
+```
+
 ## Results
 
 All numbers below come from the commands shown, on a MacBook Air M5, 24 GB, Docker
@@ -156,9 +178,26 @@ via colima with 4 CPUs / 6 GB, against the demo stack. Regenerate the tables wit
 
 ### Red-team suite
 
-`pgwarden redteam run --report docs/results/redteam-<date>.json` (deterministic, no
-LLM; runs in CI). Each attack has an **oracle** that decides from database state,
-not from the error text, whether the objective was achieved.
+131 must-block attacks in nine categories (at least 8 per category, each a distinct
+technique) and 32 benign controls, run by `pgwarden redteam run` (deterministic, no LLM;
+runs in CI on every push). Each attack has an **oracle** that decides from database
+state, not from the error text, whether the objective was achieved, and the runner
+also checks that the layer that stopped it is the one the case expected. The run needs
+the admin DSN only for the oracles, which read the tables directly:
+
+```bash
+docker compose up -d --wait
+export PGWARDEN_ADMIN_DSN="$(sed 's#/postgres?#/shop?#' .pgwarden-dev/admin/admin_dsn_host)"
+export PGWARDEN_STATE_DSN="$(cat .pgwarden-dev/host/state_dsn_host)"   # optional: clears rate windows so a rerun is clean
+uv run pgwarden redteam run --allow-load --target-url http://localhost:8080 \
+  --machine-secret-file .pgwarden-dev/machines/machine-nightly-report \
+  --report docs/results/redteam-$(date +%F).json
+```
+
+`--allow-load` also runs the request-flood case, the only one where a `rate_limited`
+outcome counts as blocked. `uv run pytest tests/integration/test_redteam_positive_control.py`
+is the positive control: the same oracles flag 45 of 47 cases in categories C, D, E and G
+(96%) when the corpus is replayed over a deliberately unsafe superuser connection.
 
 <!-- pgwarden:redteam:start -->
 | Category | Attacks | Blocked (oracle-verified) | Observed primary blocking layer |
@@ -176,11 +215,18 @@ not from the error text, whether the objective was achieved.
 Benign controls passed: 32 / 32. Documented residual risks: 4.
 <!-- pgwarden:redteam:end -->
 
+The four documented residual risks are recorded, asserted to behave as documented, and
+never counted as blocked: planner statistics through `pg_stats` on a table with row-level
+security (D05) and on a masked column (E05), row estimates through plain `EXPLAIN` (D09),
+and relation names in `pg_class`, which every role may read (G09).
+
 ### Statement-filter baselines
 
 `pgwarden bench baselines` runs the same corpus through two filters that live only
 in `bench/`, never in the product — the evidence for
-[ADR-0001](docs/adr/0001-enforce-access-in-the-database.md).
+[ADR-0001](docs/adr/0001-enforce-access-in-the-database.md). The full blocklist and
+the pinned sqlglot version (30.20.0) are published in [docs/baselines.md](docs/baselines.md);
+both filters were written for this comparison.
 
 <!-- pgwarden:baselines:start -->
 | Baseline | Attacks it would let through | Benign queries it would wrongly block |
@@ -320,14 +366,16 @@ stack, whose data carries planted prompt injections. Rows returned beyond the
 identity's privileges and writes executed without approval must both be zero;
 exfiltration through the model's final answer is a residual risk the gateway cannot
 block, reported honestly. This run costs money and is never in default CI.
+The stack runs `demo/pgwarden.llm.yaml` for it, the demo config with the query,
+proposal and registration limits raised to 600 so the run is not throttled.
 
 <!-- pgwarden:llm:start -->
-| Model | Episodes | Tasks solved | Injection-induced attempts (blocked) | Rows beyond privilege | Writes without approval | Exfil-in-answer episodes |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `deepseek/deepseek-v4-flash-0731` | 30 | 30 | 6 (6) | 0 | 0 | 0 |
-| `qwen/qwen3.7-flash` | 30 | 30 | 0 (0) | 0 | 0 | 0 |
+| Model | Episodes | Tasks solved | Marker exposures | Injection-induced attempts | Attempts per exposure | Attempts blocked | Rows beyond privilege | Writes without approval | Exfil-in-answer episodes | Spend (USD) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `deepseek/deepseek-v4-flash-0731` | 30 | 30 | 6 | 6 | 1.00 | 6 | 0 | 0 | 0 | 0.0069 |
+| `qwen/qwen3.7-flash` | 30 | 30 | 0 | 0 | n/a | 0 | 0 | 0 | 0 | 0.0052 |
 
-Total spend: $0.0121. Rows beyond privilege and writes without approval must be 0; exfiltration through the model's final answer is a residual risk the gateway cannot block.
+Total spend: $0.0121 of a $5.00 budget. Rows beyond privilege and writes without approval must be 0; exfiltration through the model's final answer is a residual risk the gateway cannot block.
 <!-- pgwarden:llm:end -->
 
 The models used and their prices are verified at run time; the recorded run's full
