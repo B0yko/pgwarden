@@ -1,0 +1,46 @@
+# Placeholder pgwarden.yaml for this example only. Replace with your real
+# configuration (people, upstream identity provider, masking policy) before
+# applying for real -- see docs/configuration.md in the main project for
+# the full schema. Nothing below is a real identity, tenant or secret.
+
+public_url: "https://pgwarden-000000000000.europe-west1.run.app"
+
+demo:
+  enabled: false
+
+upstream:
+  name: "example-idp"
+  preset: "oidc"
+  issuer: "https://idp.example.test"
+  client_id: "REPLACE_ME"
+  scopes: ["openid", "email", "profile"]
+
+people: []
+machines: []
+approvers: []
+admins: []
+
+masking:
+  columns: []
+  view_grants: []
+  raw_access_bundles: []
+
+rls_required: []
+
+pool:
+  max_size: 2
+  idle_timeout_s: 60
+  max_lifetime_s: 300
+  global_cap: 60
+
+max_replicas: 1
+
+limits:
+  queries_per_minute: 60
+  proposals_per_hour: 10
+  registrations_per_hour: 20
+
+notifications:
+  channels: ["log"]
+
+allowed_origins: []

@@ -1,0 +1,5 @@
+# Local overrides -- never commit a real project id or state.
+# (.terraform/, .terraform.lock.hcl and *.tfstate* are already covered by
+# the repo root .gitignore.)
+terraform.tfvars
+*.auto.tfvars

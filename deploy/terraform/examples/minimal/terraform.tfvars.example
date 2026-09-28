@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and fill in real values. Never commit
+# terraform.tfvars (it is gitignored) -- it and the state file are the
+# only places a real project id needs to appear.
+
+project_id = "example-project-id"
+region     = "europe-west1"
+
+# Cloud Run's deterministic URL is
+# https://SERVICE-PROJECT_NUMBER.REGION.run.app once the service exists;
+# on a first apply you generally do not know PROJECT_NUMBER yet, so either:
+#   1. apply once with a placeholder public_url, read the real
+#      google_cloud_run_v2_service.this.uri from the output, then apply
+#      again with public_url set to that value (the token audience must
+#      match exactly what clients see), or
+#   2. use a custom domain you already control and map it after the first
+#      apply.
+public_url = "https://pgwarden-000000000000.europe-west1.run.app"
+
+target_database_name = "shop"

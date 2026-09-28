@@ -1,0 +1,32 @@
+# Genuinely accepted findings only. Every entry needs a reason; do not add
+# an entry to silence something that should instead be fixed.
+
+# GCP-0017 (HIGH): "Database instance is granted a public internet
+# address" -- gcp-cloud-run/sql.tf, google_sql_database_instance.this,
+# ip_configuration.ipv4_enabled.
+#
+# Accepted: the instance has no authorized_networks entries (see the
+# comment next to ip_configuration in sql.tf), so the public IP accepts no
+# direct connections from an allowlisted CIDR. The only supported access
+# path is Cloud Run's built-in unix-socket connector, which uses the Cloud
+# SQL Auth Proxy over an IAM-authenticated, mutually authenticated TLS
+# tunnel (roles/cloudsql.client on the calling service account, short-lived
+# certificates) -- not the instance's declared IP. ssl_mode is
+# ENCRYPTED_ONLY. Going private-IP-only would remove this finding but
+# requires a VPC network, a reserved peering range and Direct VPC egress on
+# every Cloud Run revision (service and init job); the spec for this module
+# asks only for "no authorized networks", which is what this configures.
+# Revisit if the module grows a VPC anyway for another reason.
+AVD-GCP-0017
+
+# Cloud Run public invoker binding (google_cloud_run_v2_service_iam_member.
+# public_invoker, role roles/run.invoker, member allUsers) -- not currently
+# flagged by this trivy checks bundle version (verified: a full severity
+# scan finds no rule for it), but documented here anyway per the spec,
+# since a future checks-bundle update may add one.
+#
+# Accepted: intentional. Authentication is OAuth 2.1 + OIDC login at the
+# application layer (every /mcp call is checked against a verified
+# Principal; /approve and /admin pages require a configured-approver OIDC
+# login), not at the Cloud Run IAM layer. See
+# docs/adr/0008-cloud-run-and-cloud-sql.md.
