@@ -5,15 +5,15 @@ that lets Claude, ChatGPT, Cursor or any MCP client query your Postgres database
 *as the person asking* — no shared password. Identity comes from your OIDC
 provider through OAuth 2.1; **the database enforces access** through each person's
 own login role, the DBA's grants, row-level security and masking views. Reads are
-read-only by construction, writes wait for a named human approver, and every call
-lands in an append-only, hash-chained audit log.
+read-only by construction, writes wait for a named human approver, and every tool call,
+sign-in, approval decision and admin change lands in an append-only, hash-chained audit log.
 
 > One shared database credential gives every user the union of everyone's access,
 > and a prompt injection in a support ticket can make an assistant holding that
-> credential read a secrets table (General Analysis on Supabase MCP, 2025).
+> credential read a secrets table ([General Analysis on Supabase MCP, 2025](https://generalanalysis.com/blog/supabase-mcp-blog)).
 > Guarantees bolted on outside the database get bypassed: a reference read-only
-> Postgres MCP server was escaped with `COMMIT; <statement>` (Datadog Security
-> Labs, 2025). pgwarden's answer is to let Postgres decide, per person.
+> Postgres MCP server was escaped with `COMMIT; <statement>` ([Datadog Security
+> Labs, 2025](https://securitylabs.datadoghq.com/articles/mcp-vulnerability-case-study-SQL-injection-in-the-postgresql-mcp-server/)). pgwarden's answer is to let Postgres decide, per person.
 
 - **No SQL parsing.** pgwarden never inspects, rewrites or allowlists your SQL
   ([ADR-0001](docs/adr/0001-enforce-access-in-the-database.md)). It connects as the
@@ -34,7 +34,8 @@ lands in an append-only, hash-chained audit log.
 
 ## Quickstart (under 5 minutes)
 
-You need Docker (Compose v2) and the [`uv`](https://docs.astral.sh/uv/) CLI.
+You need Docker (Compose v2). The MCP Inspector example below also needs Node (`npx`),
+and the CLI example needs the [`uv`](https://docs.astral.sh/uv/) CLI.
 
 ```bash
 git clone https://github.com/B0yko/pgwarden && cd pgwarden
@@ -181,8 +182,9 @@ via colima with 4 CPUs / 6 GB, against the demo stack. Regenerate the tables wit
 131 must-block attacks in nine categories (at least 8 per category, each a distinct
 technique) and 32 benign controls, run by `pgwarden redteam run` (deterministic, no LLM;
 runs in CI on every push). Each attack has an **oracle** that decides from database
-state, not from the error text, whether the objective was achieved, and the runner
-also checks that the layer that stopped it is the one the case expected. The run needs
+what happened (rows returned, table checksums, locks, HTTP status, proposal state,
+timing), not from matching an error message, whether the objective was achieved, and
+the runner also checks that the layer that stopped it is the one the case expected. The run needs
 the admin DSN only for the oracles, which read the tables directly:
 
 ```bash
@@ -196,8 +198,9 @@ uv run pgwarden redteam run --allow-load --target-url http://localhost:8080 \
 
 `--allow-load` also runs the request-flood case, the only one where a `rate_limited`
 outcome counts as blocked. `uv run pytest tests/integration/test_redteam_positive_control.py`
-is the positive control: the same oracles flag 45 of 47 cases in categories C, D, E and G
-(96%) when the corpus is replayed over a deliberately unsafe superuser connection.
+is the positive control: over a deliberately unsafe superuser connection the same oracles
+flag at least 90% of the cases in categories C, D, E and G as achieved (47 of 49, 96%, in
+the last run; it needs the test Postgres from `devtools/testpg.sh up`).
 
 <!-- pgwarden:redteam:start -->
 | Category | Attacks | Blocked (oracle-verified) | Observed primary blocking layer |
@@ -215,15 +218,18 @@ is the positive control: the same oracles flag 45 of 47 cases in categories C, D
 Benign controls passed: 32 / 32. Documented residual risks: 4.
 <!-- pgwarden:redteam:end -->
 
-The four documented residual risks are recorded, asserted to behave as documented, and
-never counted as blocked: planner statistics through `pg_stats` on a table with row-level
-security (D05) and on a masked column (E05), row estimates through plain `EXPLAIN` (D09),
-and relation names in `pg_class`, which every role may read (G09).
+Two behaviours are documented residual risks: they are run and recorded (the call must
+succeed and return data, as documented) and never counted as blocked. Row estimates
+through plain `EXPLAIN` (D09) come from table-wide statistics that row security does not
+filter, and relation names in `pg_class` (G09) are readable by every role. Reading
+`pg_stats` is *not* one of them: Postgres withholds those rows for tables with row
+security active and for columns the role cannot read, so D05 and E05 are blocked.
 
 ### Statement-filter baselines
 
-`pgwarden bench baselines` runs the same corpus through two filters that live only
-in `bench/`, never in the product — the evidence for
+`pgwarden bench baselines` runs the SQL-bearing part of the corpus (the `query` attacks
+of categories A to G and the benign controls that send SQL; the denominators are below)
+through two filters that live only in `bench/`, never in the product — the evidence for
 [ADR-0001](docs/adr/0001-enforce-access-in-the-database.md). The full blocklist and
 the pinned sqlglot version (30.20.0) are published in [docs/baselines.md](docs/baselines.md);
 both filters were written for this comparison.
@@ -242,7 +248,8 @@ Measured on 2026-09-28 on a MacBook Air M5, 24 GB, Docker via colima with 4 CPUs
 The laptop was shared, not idle: the bench client, the gateway and Postgres all ran in
 the same 4-CPU colima VM, two other containers (the test suite's Postgres and PgBouncer)
 were running, and so were other programs. Absolute numbers therefore move from run to
-run (two full 60 s load runs that evening gave 621 and 565 requests/s); read them as an
+run (an earlier 60 s load run that evening gave 621 requests/s against the 565 recorded
+here; only the recorded run is committed); read them as an
 orientation for one gateway process on a laptop, not as a capacity claim. Nothing here
 was run on a server.
 
@@ -383,15 +390,20 @@ JSON is in [docs/results/](docs/results/).
 
 ### Setup, versions and infrastructure checks
 
-- **Setup.** On a fresh clone (a distinct compose project, non-default ports, new secrets
-  generated), `docker compose up -d --wait` took 12 s and the whole red-team suite passed
-  there (131 / 131 attacks blocked, 32 / 32 benign controls). From `git clone` to the first
-  `whoami` through the OAuth flow took about 16 s: 1 s clone, 12 s compose, 2 s for the
-  `uv` environment, 1 s for login and the call. That was with the Postgres, Python and
-  Mailpit images, the build layers and the `uv` cache already on the machine; a cold pull
-  and build depends on your network and was not measured.
-- **Image.** The production image runs as a non-root user (uid 10001), contains no mock
-  IdP or test tooling, and is 73.8 MB of compressed content (344 MB unpacked on disk).
+- **Setup.** Measured on 2026-09-28 with `time`: on a fresh clone (a distinct compose
+  project, non-default ports, new secrets generated) `docker compose up -d --wait` took
+  12 s, and `pgwarden redteam run` on that stack passed (131 / 131 attacks blocked, 32 / 32
+  benign controls; the corpus has grown since, see the table above). From `git clone` to
+  the first `whoami` through the OAuth flow took about 16 s: 1 s clone, 12 s compose, 2 s
+  for the `uv` environment, 1 s for login and the call. That was with the Postgres, Python
+  and Mailpit images, the build layers and the `uv` cache already on the machine. Building
+  the gateway and mock-IdP images without the layer cache took 11 s and 5 s more
+  (`docker build --no-cache`); pulling the three public images depends on your network and
+  was not measured.
+- **Image.** The production image runs as a non-root user (uid 10001) and contains no mock
+  IdP, screenshot script or test suite (it does carry the `redteam` and `bench`
+  subcommands). `docker image inspect` reports 73.8 MB of image content; `docker image ls`
+  shows 344 MB unpacked on disk.
 - **Versions.** The full test suite and every recorded run above used Postgres 16.15 and
   Python 3.12. CI runs the database tests on Postgres 16 and 18 (18 is the newest stable
   major on 2026-09-28; 19 is still in beta).
@@ -408,7 +420,7 @@ JSON is in [docs/results/](docs/results/).
 | MCP client | Status |
 | --- | --- |
 | MCP Inspector 2.8.0 | Verified live: the OAuth flow and tool calls run in headless Chromium against the compose stack (`tests/stack/test_inspector_oauth.py`; the screenshots above come from the same script) |
-| Plain HTTP client | Verified live: the red-team suite and the end-to-end tests drive every endpoint |
+| Plain HTTP client | Verified live: the red-team suite and the end-to-end tests drive the OAuth, MCP, approval and admin flows over HTTP |
 | Claude Code, Cursor | **Not yet verified live.** The landing page prints the connect commands; issue reports from real sessions are welcome |
 | ChatGPT, claude.ai connectors | Expected by design, not verified: they need a public HTTPS URL |
 
@@ -448,10 +460,24 @@ Deploy to Google Cloud Run + Cloud SQL with the Terraform module in
 - Masking is all-or-nothing per person, and pseudonyms are linkable by design.
 - Fixed-window rate limits allow bursts of up to twice the limit at window edges.
 - One target database per deployment, and single-tenant Entra only.
+- Rate limits apply to `query` and to write proposals; `whoami`, `list_tables` and
+  `describe_table` are not rate limited.
+- Access tokens are valid for 10 minutes. A revoked token or a suspended person is
+  refused on the next call (the gateway checks the state database on every request), but
+  a person removed only at the identity provider keeps working until their refresh-token
+  family ends (the offboarding item above).
+- A write is one plain `INSERT`, `UPDATE` or `DELETE`: no `MERGE`, DDL or several
+  statements. If the gateway crashes after an approved write was claimed, the proposal
+  stays `executing` and never re-runs, so a person has to propose it again.
+- Transaction-mode poolers (PgBouncer in transaction mode, hosted transaction-pooler
+  endpoints) are unsupported, because the per-person session state pgwarden relies on does
+  not survive them; `pgwarden doctor` detects them. Connect directly or through a
+  session-mode pooler.
 
 ## Roadmap
 
-Everything in v0.1 is real and tested. Candidate next steps: masking variants per
+Everything described above as shipped is implemented and tested as stated; what is marked
+as not verified is not verified. Candidate next steps: masking variants per
 bundle, just-in-time role provisioning from IdP group claims, more upstream
 presets, and Terraform for other clouds.
 
