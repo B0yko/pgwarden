@@ -1,0 +1,156 @@
+# Category F: resource exhaustion.
+#
+# The read path's defenses here are: statement_timeout (5s default),
+# lock_timeout (1s), row_cap (500, enforced by stopping the portal fetch
+# rather than by inspecting the query), max_response_bytes (1 MiB, enforced
+# during serialization), the per-person pool's small size and global cap
+# (spec item 3), and the fixed connection-release reset the read path runs
+# on every release (spec item 5's hygiene traps). F08 exists specifically
+# because pg_advisory_lock is session-level and non-transactional by design
+# -- ROLLBACK alone does not release it, so pgwarden's own reset has to.
+# F09 is a flood case: per the evaluation section, it only runs with
+# `redteam run --allow-load`, and a rate_limited audit outcome counts as
+# "blocked" for this case only (anywhere else in the corpus it would
+# invalidate the run).
+
+- id: F01
+  category: F
+  title: plain pg_sleep past the statement timeout
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT pg_sleep(30)"
+    params: []
+  objective: hold a connection and a backend busy for 30 seconds, well past the 5s default statement_timeout, to degrade service for other identities sharing the global connection cap.
+  expected_layer: timeout_or_cap
+  sqlstate: "57014"
+  oracles:
+    - type: completes_within
+      ms: 6000
+    - type: gateway_healthy_after
+
+- id: F02
+  category: F
+  title: disarm statement_timeout then sleep
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT set_config('statement_timeout', '0', true), pg_sleep(60)"
+    params: []
+  objective: disable the statement timeout as part of the same statement that then sleeps, hoping the disarm takes effect before the timeout would otherwise fire.
+  expected_layer: timeout_or_cap
+  sqlstate: "57014"
+  oracles:
+    - type: completes_within
+      ms: 6000
+    - type: gateway_healthy_after
+  note: "STATUS.md already records that statement_timeout cannot be disarmed mid-statement against a real Postgres 16 (verified during step 1 research); this case is the regression test for that finding."
+
+- id: F03
+  category: F
+  title: huge generate_series
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM generate_series(1, 100000000000)"
+    params: []
+  objective: request an effectively unbounded result set, hoping the gateway tries to materialize or serialize all of it instead of stopping after row_cap.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 10000
+    - type: gateway_healthy_after
+
+- id: F04
+  category: F
+  title: cartesian join without an aggregate
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM orders a, orders b"
+    params: []
+  objective: force a cartesian product of two 20,000-row tables (400,000,000 pairs), hoping the gateway pulls far more than row_cap rows before it notices, or that the executor eagerly materializes the join before any rows are fetched.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 3000
+    - type: gateway_healthy_after
+  note: "a plain cartesian join with no ORDER BY/aggregate is expected to be cheap here, because the portal-based fetch of row_cap+1 rows acts like a LIMIT on the executor and the nested loop only needs to produce that many tuples; F05 is the variant that forces full materialization instead."
+
+- id: F05
+  category: F
+  title: cartesian join forced through an aggregate
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT count(*) FROM orders a, orders b"
+    params: []
+  objective: force the same 400,000,000-row cartesian product as F04, but wrap it in count(*) so the executor must fully process every combination before it can return the single output row, defeating the portal fetch limit's ability to short-circuit.
+  expected_layer: timeout_or_cap
+  sqlstate: "57014"
+  oracles:
+    - type: completes_within
+      ms: 6000
+    - type: gateway_healthy_after
+
+- id: F06
+  category: F
+  title: repeat() blow-up at Postgres's own limits
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT repeat('x', 2000000000)"
+    params: []
+  objective: build a single value near Postgres's own maximum varlena size, hoping to exhaust server or gateway memory before any cap pgwarden enforces gets a chance to apply.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 6000
+    - type: gateway_healthy_after
+
+- id: F07
+  category: F
+  title: one row of 100x max_response_bytes
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT repeat('a', 104857600)"
+    params: []
+  objective: return a single row whose serialized size is about 100 times the 1 MiB max_response_bytes default, testing the byte-cap enforcement specifically (as opposed to F06's attempt to break Postgres itself) -- this is the one case in the corpus where the documented residual risk is memory for one oversized row, not a full block.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 6000
+    - type: gateway_healthy_after
+  note: "the response must still be capped/rejected at serialization; if the gateway cannot bound memory for this one oversized row before the byte cap can apply, that is the one memory-related item the evaluation section allows as a residual risk, reported with its measured peak RSS rather than silently passed."
+
+- id: F08
+  category: F
+  title: session advisory lock outliving the transaction
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT pg_advisory_lock(424242)"
+    params: []
+  objective: acquire a session-level advisory lock, which is not transactional and is documented to survive ROLLBACK/COMMIT, to hold it past this call's rollback and block dana or another identity from acquiring the same lock key.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: lock_released
+      key: 424242
+  note: "this is the exact 'traps to design against' case from spec item 5: the released pooled connection's fixed reset must release session-level advisory locks (e.g. via pg_advisory_unlock_all() or an equivalent DISCARD), or a later caller reusing that connection, or a different identity trying the same key, is blocked by a lock this identity's own already-rolled-back call took."
+
+- id: F09
+  category: F
+  title: query rate flood
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT 1"
+    params: []
+  objective: send far more than 60 query calls in one minute for a single identity, to see whether the gateway degrades (memory, connection exhaustion, latency for other identities) instead of cleanly rate-limiting once the 60/minute window is exceeded.
+  expected_layer: rate_limit
+  oracles:
+    - type: gateway_healthy_after
+    - type: completes_within
+      ms: 2000
+  note: "flood-only case: runs solely under `redteam run --allow-load` per the evaluation section. A rate_limited audit outcome for calls past the 60th counts as blocked here only; this case is a single representative statement repeated by the runner, not the statement text itself that matters."

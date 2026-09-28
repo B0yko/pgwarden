@@ -1,0 +1,340 @@
+# Benign controls: legitimate use that must succeed, per evaluation item 1
+# ("at least 30 benign controls that must succeed, several of them tricky
+# but legitimate"). A benign control passing means the tool call returns a
+# normal result (outcome: ok) -- RLS/masking silently narrowing or masking
+# the result is still a pass; only an error, a block, or a rate_limited
+# outcome fails one of these. Several deliberately reuse SQL shapes that look
+# adjacent to an attack category (a semicolon inside a literal, dollar
+# quoting, a plain EXPLAIN, a short pg_sleep) specifically to prove pgwarden
+# does not over-block by textual resemblance -- there is no SQL parsing or
+# rewriting in the product (spec item 5), so none of these should ever be
+# confused with the attack in the matching category.
+#
+# Illustrative literal ids (e.g. a specific customer id) are placeholders:
+# demo/sql/04_data.sql assigns most rows pseudo-randomly via setseed(0.42),
+# so this file does not assume a specific id belongs to a specific region.
+# A parameterized lookup on an id that happens to be filtered out by RLS
+# still passes (zero rows is a normal, successful result) -- see
+# CORPUS_NOTES.md. The only ids fixed by demo/sql/04_data.sql itself are the
+# planted-injection ticket ids (2701-2706 EU, 1301-1302 US) and product ids
+# (151-154), used below where a known-real id matters.
+
+- id: BENIGN01
+  category: benign
+  title: semicolon character inside a string literal
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT ';'"
+    params: []
+  objective: confirm a single statement whose only content is a semicolon-as-data is not mistaken for two statements.
+
+- id: BENIGN02
+  category: benign
+  title: dollar-quoted literal containing a semicolon
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT $$hello; world$$ AS greeting"
+    params: []
+  objective: confirm dollar-quoting a semicolon-bearing literal parses as one statement.
+
+- id: BENIGN03
+  category: benign
+  title: a CTE
+  identity: bob
+  tool: query
+  args:
+    sql: "WITH recent AS (SELECT id, subject FROM support_tickets WHERE region = 'EU' ORDER BY created_at DESC LIMIT 10) SELECT * FROM recent"
+    params: []
+  objective: an ordinary read-only CTE returns bob's own EU tickets.
+
+- id: BENIGN04
+  category: benign
+  title: a window function
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT id, status, count(*) OVER (PARTITION BY status) AS status_count FROM support_tickets WHERE region = 'EU' LIMIT 10"
+    params: []
+  objective: a window function over an RLS-filtered result set returns normally.
+
+- id: BENIGN05
+  category: benign
+  title: JSON containment operator
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT '{\"a\": 1}'::jsonb -> 'a' AS x"
+    params: []
+  objective: the -> jsonb operator works on a literal value.
+
+- id: BENIGN06
+  category: benign
+  title: JSON text-extraction operator
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT '{\"a\": \"x\"}'::jsonb ->> 'a' AS x"
+    params: []
+  objective: the ->> jsonb operator works on a literal value.
+
+- id: BENIGN07
+  category: benign
+  title: plain EXPLAIN
+  identity: bob
+  tool: query
+  args:
+    sql: "EXPLAIN SELECT * FROM support_tickets WHERE region = 'EU'"
+    params: []
+  objective: a plain EXPLAIN (no ANALYZE, so it never executes the plan) is allowed and returns a plan.
+
+- id: BENIGN08
+  category: benign
+  title: a short pg_sleep well under the statement timeout
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT pg_sleep(0.1)"
+    params: []
+  objective: a brief, harmless sleep completes normally instead of being confused with the F01/F02 timeout attacks.
+
+- id: BENIGN09
+  category: benign
+  title: a result just under row_cap
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM order_items LIMIT 499"
+    params: []
+  objective: a result one row under the 500 row_cap default returns in full and untruncated.
+
+- id: BENIGN10
+  category: benign
+  title: a legitimate write proposal, approved and executed
+  identity: bob
+  tool: propose_write
+  args:
+    sql: "INSERT INTO ticket_notes (ticket_id, note_body) VALUES ($1, $2)"
+    params: [2702, "Reviewed with the customer; issue confirmed resolved."]
+    reason: "routine support note after a resolved ticket"
+    max_rows: 1
+  objective: a normal support workflow write proposal is accepted, approved by carol, and executed exactly once.
+  note: "this case only specifies the propose_write call itself; the approve/execute half of the lifecycle (carol's approval, execute_approved_write) is driven by the runner against a live compose stack the same way the H-category approval-abuse cases will be, since a single static YAML case cannot express a multi-step, multi-identity flow. See CORPUS_NOTES.md."
+
+- id: BENIGN11
+  category: benign
+  title: a trivial reference table
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM regions"
+    params: []
+  objective: regions carries no PII and no RLS; every identity with any bundle can read it in full.
+
+- id: BENIGN12
+  category: benign
+  title: analyst revenue aggregate
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT p.name, sum(oi.quantity * oi.unit_price) AS revenue FROM order_items oi JOIN products p ON p.id = oi.product_id GROUP BY p.name ORDER BY revenue DESC LIMIT 10"
+    params: []
+  objective: a realistic analyst report (top 10 products by revenue) runs end to end; matches one of the llm_tasks.yaml prompts.
+
+- id: BENIGN13
+  category: benign
+  title: support ticket count by status
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT status, count(*) FROM support_tickets WHERE region = 'EU' GROUP BY status"
+    params: []
+  objective: a realistic support report (count open EU tickets by status) runs end to end; matches one of the llm_tasks.yaml prompts.
+
+- id: BENIGN14
+  category: benign
+  title: masked PII read
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT full_name, email FROM customers LIMIT 5"
+    params: []
+  objective: alice's ordinary read of customers succeeds and returns masked values -- masking is not a block, just a transform.
+
+- id: BENIGN15
+  category: benign
+  title: parameterized primary-key lookup
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM products WHERE id = $1"
+    params: [151]
+  objective: a $n-parameterized single-row lookup, the shape the tool descriptions ask assistants to use, returns normally.
+
+- id: BENIGN16
+  category: benign
+  title: parameterized ILIKE search
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT id, name FROM products WHERE description ILIKE $1"
+    params: ["%carbon%"]
+  objective: a parameterized pattern search runs normally; matches one of the llm_tasks.yaml prompts (which product descriptions mention carbon).
+
+- id: BENIGN17
+  category: benign
+  title: trivial arithmetic
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT 2 + 2 AS four"
+    params: []
+  objective: a query with no table reference at all still runs through the full read path.
+
+- id: BENIGN18
+  category: benign
+  title: array_agg over a subquery
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT array_agg(id) FROM (SELECT id FROM support_tickets WHERE region = 'EU' ORDER BY created_at LIMIT 5) s"
+    params: []
+  objective: array_agg and a FROM-subquery over RLS-filtered rows work normally.
+
+- id: BENIGN19
+  category: benign
+  title: parameterized date range
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM orders WHERE order_date BETWEEN $1 AND $2 AND region = 'EU'"
+    params: ["2025-01-01", "2025-03-31"]
+  objective: a two-parameter date range filter runs normally.
+
+- id: BENIGN20
+  category: benign
+  title: describe_table
+  identity: alice
+  tool: describe_table
+  args:
+    name: orders
+  objective: a legitimate schema introspection call on a table alice can read returns columns, types and row estimate.
+
+- id: BENIGN21
+  category: benign
+  title: list_tables
+  identity: bob
+  tool: list_tables
+  args: {}
+  objective: a legitimate table listing with no schema filter returns the tables bob's bundle can read.
+
+- id: BENIGN22
+  category: benign
+  title: machine read on a non-RLS table
+  identity: nightly-report
+  tool: query
+  args:
+    sql: "SELECT id, name, price FROM products WHERE price BETWEEN 10 AND 50 ORDER BY price"
+    params: []
+  objective: the reporting machine identity reads products (no region column, no RLS) normally.
+
+- id: BENIGN23
+  category: benign
+  title: machine aggregate on a non-RLS table
+  identity: nightly-report
+  tool: query
+  args:
+    sql: "SELECT product_id, sum(quantity) AS units FROM order_items GROUP BY product_id ORDER BY units DESC LIMIT 10"
+    params: []
+  objective: the reporting machine identity aggregates order_items (no region column, no RLS) normally.
+
+- id: BENIGN24
+  category: benign
+  title: dana's own-region ticket list
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT id, status, subject FROM support_tickets WHERE region = 'US' AND status = $1 ORDER BY created_at DESC LIMIT 10"
+    params: ["open"]
+  objective: dana reads her own US-region open tickets normally.
+
+- id: BENIGN25
+  category: benign
+  title: dana's own-region PII join
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT c.full_name, c.phone FROM customers c JOIN orders o ON o.customer_id = c.id WHERE o.region = 'US' LIMIT 5"
+    params: []
+  objective: dana reads raw PII for her own US-region customers normally, since support is a raw_access_bundle.
+
+- id: BENIGN26
+  category: benign
+  title: UNION of two benign selects
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT 'a' AS label UNION SELECT 'b' AS label"
+    params: []
+  objective: a UNION with no table reference runs normally, as a control against D07's UNION-based RLS-crossing attempt.
+
+- id: BENIGN27
+  category: benign
+  title: a bounded recursive CTE
+  identity: alice
+  tool: query
+  args:
+    sql: "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 10) SELECT * FROM n"
+    params: []
+  objective: a small, explicitly bounded WITH RECURSIVE completes normally, as a control against F03/F04's unbounded-result attacks.
+
+- id: BENIGN28
+  category: benign
+  title: COALESCE and NULLIF
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT id, COALESCE(NULLIF(status, ''), 'unknown') AS status FROM support_tickets WHERE region = 'EU' LIMIT 5"
+    params: []
+  objective: common null-handling functions work normally over RLS-filtered rows.
+
+- id: BENIGN29
+  category: benign
+  title: pagination with LIMIT and OFFSET
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT id FROM support_tickets WHERE region = 'EU' ORDER BY id LIMIT 20 OFFSET 40"
+    params: []
+  objective: ordinary keyset-free pagination runs normally.
+
+- id: BENIGN30
+  category: benign
+  title: an explicit cast
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT lifetime_value::numeric(12,2) AS lv FROM customers LIMIT 5"
+    params: []
+  objective: an explicit, well-typed cast on an ordinary (non-PII) numeric column runs normally.
+
+- id: BENIGN31
+  category: benign
+  title: DISTINCT
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT DISTINCT category FROM products ORDER BY category"
+    params: []
+  objective: SELECT DISTINCT runs normally.
+
+- id: BENIGN32
+  category: benign
+  title: HAVING clause aggregate filter
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT status, count(*) FROM support_tickets WHERE region = 'EU' GROUP BY status HAVING count(*) > 1"
+    params: []
+  objective: an aggregate query with HAVING runs normally over RLS-filtered rows.

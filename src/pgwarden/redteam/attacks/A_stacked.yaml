@@ -1,0 +1,170 @@
+# Category A: stacked statements.
+#
+# Every case sends more than one SQL statement through the `query` tool's
+# single prepared-statement Parse step. The read path prepares user SQL
+# through the extended protocol and rejects more than one statement at
+# Parse time (spec item 5, step 4) -- so every case here expects
+# expected_layer: protocol, typically SQLSTATE 42601 (syntax_error) or a
+# driver-level "cannot insert multiple commands into a prepared statement"
+# raised before the statement ever runs. The oracle on each case additionally
+# confirms the attacker's real goal (read a canary, escalate a role, or
+# mutate a table) was not achieved, in case the protocol layer is ever
+# weakened -- the oracle must not just trust the error, per spec item 14
+# ("decides from state, not from the error text").
+#
+# A01/A02 reproduce the public write-ups named in the spec's Problem section
+# (Datadog Security Labs' `COMMIT; <statement>` escape of a reference
+# read-only Postgres MCP server, and its ROLLBACK sibling). A05-A09 vary how
+# the statement separator is textually hidden, so a naive regex/keyword
+# blocklist (see bench/baselines) would need to notice each escaping form
+# even though pgwarden's Parse-based defense does not care about any of them.
+
+- id: A01
+  category: A
+  title: COMMIT then read the billing canary
+  identity: bob
+  tool: query
+  args:
+    sql: "COMMIT; SELECT token FROM billing.payment_methods"
+    params: []
+  objective: end the gateway's read-only transaction early with COMMIT, then run a second statement that reads the billing canary table no bundle can see.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: A02
+  category: A
+  title: ROLLBACK then delete refunds
+  identity: dana
+  tool: query
+  args:
+    sql: "ROLLBACK; DELETE FROM refunds"
+    params: []
+  objective: end the gateway's read-only transaction early with ROLLBACK, then run a second statement that deletes every refund row.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: A03
+  category: A
+  title: trailing DML after a legitimate-looking select
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM orders LIMIT 1; DELETE FROM order_items"
+    params: []
+  objective: hide a destructive second statement after an innocuous first statement that alice's own bundle is allowed to run.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.order_items
+
+- id: A04
+  category: A
+  title: trailing DDL after a select
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT 1; DROP TABLE customers"
+    params: []
+  objective: append a DROP TABLE as a second statement, hoping only the first statement is inspected.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.customers
+
+- id: A05
+  category: A
+  title: real separator hidden after a decoy semicolon in a block comment
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT 1 /* ; decoy separator, ignore me */; SELECT token FROM billing.payment_methods"
+    params: []
+  objective: place a harmless semicolon inside a comment first, betting that a naive statement-boundary scanner treats the comment's semicolon and the real one the same way (or gets confused and misses the real one).
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+  note: this case is aimed more at the bench/baselines regex filter than at pgwarden's own Parse-based defense; pgwarden must still reject it regardless of the comment.
+
+- id: A06
+  category: A
+  title: real separator hidden after a semicolon-shaped double-quoted identifier
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT 1 AS \"not a; real separator\"; DELETE FROM refunds"
+    params: []
+  objective: put a semicolon-shaped character sequence inside a quoted identifier so a naive splitter miscounts statement boundaries, then append a real second statement.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: A07
+  category: A
+  title: real separator hidden inside a dollar-quoted literal, targeting masked PII
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT $$contains a ; character$$; SELECT full_name, email, phone FROM customers"
+    params: []
+  objective: use dollar-quoting to disguise a semicolon in the first statement, then run a second statement reading raw PII columns that alice's identity only ever sees masked.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: A08
+  category: A
+  title: real separator hidden inside a standard literal with a doubled quote, targeting a self-grant
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT 'it''s fine; nothing to see'; GRANT support TO CURRENT_USER"
+    params: []
+  objective: disguise a semicolon inside an escaped-quote string literal, then append a GRANT that would hand alice's login role the support bundle's raw-PII access.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: role_unchanged
+
+- id: A09
+  category: A
+  title: real separator hidden inside an E'' escape-string literal, targeting a role switch
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT E'line one;\\nline two'; SELECT set_config('role', 'support', true)"
+    params: []
+  objective: disguise a semicolon inside an E'' escape string, then append a second statement that tries to change the session's effective role via set_config.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: role_unchanged
+
+- id: A10
+  category: A
+  title: a chain of three statements, destructive one last
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT 1; SELECT 2; DELETE FROM ticket_notes"
+    params: []
+  objective: chain several harmless-looking statements before the real attack, betting that only the last (or only the first) statement is examined.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.ticket_notes

@@ -1,0 +1,180 @@
+# Category D: crossing row-level security.
+#
+# demo/sql/03_rls.sql keys every policy on internal.can_see_region(region),
+# itself keyed on session_user (never current_user or a settable GUC), TO
+# PUBLIC on customers/orders/support_tickets/ticket_notes/refunds. bob is
+# registered for EU only, dana for US only, and the nightly-report machine
+# is registered for no region at all (internal.region_access has no row for
+# pw_m_nightly_report). D01-D04 and D06-D08, D10-D11 are must-block: RLS
+# should silently filter rows rather than error, so the oracle checks the
+# response never contains another region's data, not that the call failed.
+# D05 and D09 are intentionally NOT must-block: they are the two named
+# techniques from this category's spec bullet ("pg_stats" and, via EXPLAIN,
+# planner row estimates) that fall under the evaluation section's allowed
+# residual-risk list ("planner statistics and row estimates"), so they carry
+# must_block: false and are asserted as documented behaviour instead of
+# scored against the release gate. See CORPUS_NOTES.md.
+
+- id: D01
+  category: D
+  title: direct query for another region's rows
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM support_tickets WHERE region = 'US'"
+    params: []
+  objective: read US support tickets directly; bob is registered for EU only.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["Billing history export request (ticket 1301)", "Account seems locked out of some features (ticket 1302)"]
+
+- id: D02
+  category: D
+  title: join across two RLS-protected tables to surface another region
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT o.id, o.total_amount, t.subject FROM orders o JOIN support_tickets t ON o.customer_id = t.customer_id WHERE t.region = 'US'"
+    params: []
+  objective: use a join between two independently RLS-protected tables, hoping the policy on one side does not compose with a join against the other.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["Billing history export request (ticket 1301)", "Account seems locked out of some features (ticket 1302)"]
+
+- id: D03
+  category: D
+  title: aggregate GROUP BY leaking another region's existence
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT region, count(*) FROM support_tickets GROUP BY region"
+    params: []
+  objective: use GROUP BY region to see whether any region other than EU appears as a group at all, without reading individual rows.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["US", "APAC"]
+
+- id: D04
+  category: D
+  title: cast-error leak
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM customers WHERE region = 'US' AND full_name::int > 0"
+    params: []
+  objective: force a type-cast error on a column of a row that should already be filtered out by RLS, hoping the offending value leaks into the error message because the planner evaluated the cast before the row-security qual.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: bob
+  note: "Postgres treats RLS USING quals like security_barrier quals and guarantees they run before user-supplied quals for the same row, so this should return zero rows (or a generic cast error with no leaked value) rather than a per-row error; worth a dedicated test because the guarantee is easy to break by accident (e.g. a future STABLE/LEAKPROOF misclassification on can_see_region)."
+
+- id: D05
+  category: D
+  title: pg_stats reveals cross-region column statistics
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT most_common_vals, most_common_freqs FROM pg_stats WHERE schemaname = 'public' AND tablename = 'support_tickets' AND attname = 'region'"
+    params: []
+  objective: read planner statistics on the region column, which are computed over the whole table by ANALYZE and are not subject to row-level security, to learn that non-EU regions exist and roughly how common they are.
+  expected_layer: rls
+  must_block: false
+  residual_risk: "planner statistics and row estimates"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["US", "APAC"]
+  note: "expected to be ACHIEVED, not blocked -- pg_stats is a system catalog reflecting the whole table regardless of RLS. This is one of the two exact named exceptions in the evaluation section's allowed residual-risk list; needs a test asserting the documented behaviour (that it leaks), not a must-block test."
+
+- id: D06
+  category: D
+  title: correlated subquery leak
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT t.id FROM support_tickets t WHERE EXISTS (SELECT 1 FROM support_tickets t2 WHERE t2.region = 'EU' AND t2.customer_id = t.customer_id)"
+    params: []
+  objective: use a correlated EXISTS subquery against the same RLS-protected table to indirectly detect EU customers by correlation, rather than selecting EU rows directly.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+
+- id: D07
+  category: D
+  title: UNION across two RLS-protected tables
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT region FROM support_tickets UNION SELECT region FROM orders"
+    params: []
+  objective: combine two independently RLS-protected tables with UNION, hoping the planner's handling of the set operation applies one side's policy inconsistently.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["EU"]
+
+- id: D08
+  category: D
+  title: LEFT JOIN NULL-extension to distinguish filtered-but-present from absent
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT o.id, s.id AS ticket_id FROM orders o LEFT JOIN support_tickets s ON o.customer_id = s.customer_id AND s.region = 'US' WHERE o.region = 'EU'"
+    params: []
+  objective: use a LEFT JOIN so a US ticket that RLS filters out and a genuinely absent ticket both show up as NULL, then try to tell the two cases apart through some other signal (row count, timing, plan shape) to infer whether hidden US tickets exist for an EU customer.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+  note: "the two cases (filtered vs. absent) must be indistinguishable from the response alone; this case exists to catch an accidental signal (e.g. a different NULL pattern, or the presence of the join column itself) rather than a data leak in the strict sense."
+
+- id: D09
+  category: D
+  title: EXPLAIN row-estimate leak
+  identity: bob
+  tool: query
+  args:
+    sql: "EXPLAIN SELECT * FROM support_tickets WHERE region = 'US'"
+    params: []
+  objective: use a plain EXPLAIN (no ANALYZE, so it never executes and is itself a benign, allowed statement) to read the planner's estimated row count for a predicate matching another region, inferring whether such rows exist and roughly how many, from statistics rather than from the RLS-filtered result itself.
+  expected_layer: rls
+  must_block: false
+  residual_risk: "planner statistics and row estimates"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+  note: "the EXPLAIN call itself must succeed (plain EXPLAIN is a benign control, see benign.yaml); the row-estimate number in its output is the named residual risk, not the plan text or an error. Needs a test asserting the documented behaviour, not a must-block test."
+
+- id: D10
+  category: D
+  title: negation sweep across every non-home region at once
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM orders WHERE region <> 'EU'"
+    params: []
+  objective: sweep every region other than bob's own with a single negated predicate instead of naming one region at a time, in case the policy only special-cases equality comparisons.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["US", "APAC"]
+
+- id: D11
+  category: D
+  title: machine identity with no region registered at all
+  identity: nightly-report
+  tool: query
+  args:
+    sql: "SELECT * FROM orders"
+    params: []
+  objective: read orders as a machine identity that has no row in internal.region_access for any region, checking that the RLS design defaults to deny-all rather than allow-all when a login role is simply absent from the lookup table.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+  note: "expected result is zero rows for every region, not just for regions other than one the machine is registered for -- nightly-report has no region access at all under demo/pgwarden.yaml, only the reporting bundle's non-RLS tables (products, order_items, regions)."

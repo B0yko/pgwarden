@@ -1,0 +1,158 @@
+# Category E: bypassing masking.
+#
+# Masking is enforced by generated views in schema pw_masked (spec item 6),
+# reached only through search_path routing for people without a raw-access
+# bundle. alice (analyst bundle, no writer) is the only demo identity that is
+# actually masked: her search_path puts pw_masked first, so unqualified
+# `customers` resolves to pw_masked.customers, a security_barrier view whose
+# full_name/email/phone columns are already wrapped in pw_fn.mask_* before
+# any expression, alias, or serialization function ever sees them. There is
+# no post-processing of result sets (spec item 6's own warning), so every
+# case here is really testing that the VIEW is what actually gets queried,
+# not that pgwarden inspects column names in the output. E05 is the one
+# named technique from this category's spec bullet that is an intentional,
+# documented residual risk rather than a must-block failure, for the same
+# reason as D05/D09 (planner statistics are not row-security- or
+# masking-aware).
+
+- id: E01
+  category: E
+  title: alias the output column name
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT full_name AS not_pii FROM customers LIMIT 5"
+    params: []
+  objective: rename the output column, on the chance masking is applied by matching the result column's name rather than by which view/column was actually read.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E02
+  category: E
+  title: wrap the masked column in an expression
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT full_name || '' AS x FROM customers LIMIT 5"
+    params: []
+  objective: concatenate the masked column with an empty string, on the chance an expression somehow reaches the underlying raw value instead of the already-masked one the view returns.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E03
+  category: E
+  title: row_to_json of the whole row
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT row_to_json(customers) FROM customers WHERE id = 1"
+    params: []
+  objective: serialize the entire row as JSON in one call rather than naming masked columns individually, exactly as planted injection PWINJ-05 suggests to the assistant.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E04
+  category: E
+  title: schema-qualify the base table directly
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT full_name FROM public.customers LIMIT 5"
+    params: []
+  objective: bypass search_path resolution entirely by naming the base table's schema explicitly, going straight at public.customers instead of through pw_masked.customers.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+  note: "spec item 6 states this must be a plain permission error, not a masked or filtered result: alice's bundle is never granted SELECT on the base public.customers table at all, only on the pw_masked.customers view."
+
+- id: E05
+  category: E
+  title: pg_stats.most_common_vals on a masked column
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT most_common_vals FROM pg_stats WHERE schemaname = 'public' AND tablename = 'customers' AND attname = 'email'"
+    params: []
+  objective: read planner statistics on the base table's real email column, which ANALYZE computed over the actual unmasked data and which pg_stats exposes regardless of masking views or grants.
+  expected_layer: masking_view
+  must_block: false
+  residual_risk: "planner statistics and row estimates"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+  note: "expected to be ACHIEVED, not blocked, for the same reason as D05: pg_stats reflects the base table regardless of the masking view layered on top. Same evaluation-section allowance; needs a test asserting the documented behaviour."
+
+- id: E06
+  category: E
+  title: attempt a writer-role switch to shed masking
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT c.full_name FROM customers c, (SELECT set_config('role', 'support_writer', true)) AS _sw"
+    params: []
+  objective: switch to a writer role that has raw customers access nowhere in its own grants either, on the chance a role switch also changes search_path back to an unmasked one, or unlocks the base table through some other membership path.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+  note: "alice is not configured with any writer role at all (demo/pgwarden.yaml), so the set_config('role', ...) call itself should fail as an unauthorized role switch; even if it somehow succeeded, search_path is a session GUC unaffected by SET ROLE/set_config('role', ...), and support_writer has no grant on customers in any case (see C10)."
+
+- id: E07
+  category: E
+  title: wrap the masked column in a CASE expression
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT CASE WHEN true THEN full_name ELSE full_name END AS x FROM customers LIMIT 5"
+    params: []
+  objective: route the masked column through conditional control flow rather than a plain operator, as a structurally different expression-wrapping attempt from E02.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E08
+  category: E
+  title: reference the masked view indirectly through a CTE
+  identity: alice
+  tool: query
+  args:
+    sql: "WITH x AS (SELECT * FROM customers) SELECT full_name, email FROM x LIMIT 5"
+    params: []
+  objective: put a layer of CTE indirection between the query and the customers reference, on the chance search_path resolution or the view's security_barrier semantics do not survive being wrapped in a WITH clause.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E09
+  category: E
+  title: smuggle a masked column through a join
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT o.id, c.full_name, c.email FROM orders o JOIN customers c ON o.customer_id = c.id LIMIT 5"
+    params: []
+  objective: reach the masked columns by joining through customers rather than selecting from it directly, on the chance masking is only applied when customers is the query's own FROM target.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice

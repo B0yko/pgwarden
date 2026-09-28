@@ -1,0 +1,232 @@
+# Category B: writes attempted on the read path (the `query` tool), bypassing
+# the approval queue entirely. Every case here submits exactly one statement
+# (so it clears the category-A protocol check) and instead relies on the
+# read path's `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction
+# (spec item 5, step 2) to refuse the write. Postgres's own read-only-
+# transaction enforcement disallows INSERT/UPDATE/DELETE/COPY FROM against
+# non-temporary tables, all CREATE/ALTER/DROP commands, COMMENT, GRANT,
+# REVOKE, TRUNCATE, and EXPLAIN ANALYZE/EXECUTE of any of those -- so most
+# cases expect expected_layer: read_only_transaction, SQLSTATE 25006. B09
+# (nextval) and B11/B12 (mode-flip attempts) are deliberately the exceptions:
+# sequence advances and transaction-characteristic changes are NOT covered
+# by that enforcement, so they are included specifically because Postgres
+# itself will not stop them, and pgwarden has to rely on a different layer
+# (role privilege, or the "characteristics cannot change after the first
+# query" rule the read path's own step-3 set_config call triggers for free).
+# One case (B13) uses the `propose_write` tool instead of `query`, to check
+# that the approval path's own EXPLAIN-based validation independently
+# rejects a write-shaped statement, as defense in depth alongside the
+# read path's read-only transaction.
+
+- id: B01
+  category: B
+  title: direct DML
+  identity: bob
+  tool: query
+  args:
+    sql: "DELETE FROM refunds WHERE id = 1"
+    params: []
+  objective: delete a refund row directly through the read path instead of the approval queue.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B02
+  category: B
+  title: DML hidden in a data-modifying CTE
+  identity: bob
+  tool: query
+  args:
+    sql: "WITH d AS (DELETE FROM refunds WHERE id = 1 RETURNING id) SELECT * FROM d"
+    params: []
+  objective: wrap the delete in a WITH clause so the statement's top-level keyword is SELECT, hoping a naive read-only check only looks at the first keyword.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B03
+  category: B
+  title: SELECT ... FOR UPDATE
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM support_tickets WHERE id = 2701 FOR UPDATE"
+    params: []
+  objective: take a row lock through the read path to block a concurrent writer, or hold the lock past this call's rollback.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: lock_released
+
+- id: B04
+  category: B
+  title: SELECT INTO
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * INTO exfil_customers FROM customers"
+    params: []
+  objective: create a new permanent table populated from customers, to read the copy later outside RLS or through a role with broader table-level grants.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.exfil_customers
+  note: "the target table must not exist either before or after the call; table_checksum_unchanged here means 'still absent', checked over an admin connection."
+
+- id: B05
+  category: B
+  title: COPY
+  identity: bob
+  tool: query
+  args:
+    sql: "COPY refunds FROM STDIN"
+    params: []
+  objective: bulk-export the full customers table over COPY's own wire sub-protocol, bypassing row_cap and the portal-based fetch limit that applies to ordinary SELECT results.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: null
+  note: "COPY is not expressible through PREPARE/the extended query protocol asyncpg's Connection.prepare() uses (verify in the asyncpg docs per spec item 5); expect this to fail before Postgres's read-only check is even reached, so classify it under protocol rather than read_only_transaction unless the build step's research shows otherwise."
+
+- id: B06
+  category: B
+  title: CALL of a procedure
+  identity: bob
+  tool: query
+  args:
+    sql: "CALL internal.copy_ticket_region()"
+    params: []
+  objective: invoke server-side logic through CALL, which is not literally INSERT/UPDATE/DELETE and might not be covered by a naive read-only check the way top-level DML is.
+  expected_layer: privileges
+  oracles:
+    - type: role_unchanged
+  note: "the demo only defines internal.copy_ticket_region() as a trigger function, not a PROCEDURE, so CALL fails as the wrong object kind (42809) rather than exercising a real writable procedure; the demo intentionally grants EXECUTE on no procedure to any bundle, so no case can target a real one. If a real writable procedure is ever added to demo/sql/, replace this case's SQL and keep the id."
+
+- id: B07
+  category: B
+  title: anonymous DO block wrapping a write
+  identity: dana
+  tool: query
+  args:
+    sql: "DO $$ BEGIN DELETE FROM refunds; END $$"
+    params: []
+  objective: run the delete inside a PL/pgSQL anonymous code block, since DO itself is not literally an INSERT/UPDATE/DELETE statement even though its body performs one under the caller's own privileges.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B08
+  category: B
+  title: CREATE TEMP TABLE
+  identity: alice
+  tool: query
+  args:
+    sql: "CREATE TEMP TABLE exfil AS SELECT * FROM customers"
+    params: []
+  objective: create a temporary table as a staging copy of customers, on the common misconception that temporary-table DDL is exempt from the read-only restriction the way DML against existing temp tables is.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: pg_temp.exfil
+  note: "regression case for the 'traps to design against' list: Postgres's read-only enforcement exempts INSERT/UPDATE/DELETE/COPY FROM against temp tables, but NOT the CREATE/ALTER/DROP commands that make one -- verify this exact behaviour against Postgres 16 before relying on it."
+
+- id: B09
+  category: B
+  title: nextval on a table's identity sequence
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT nextval(pg_get_serial_sequence('ticket_notes', 'id'))"
+    params: []
+  objective: advance a sequence counter, which is explicitly documented as allowed even in a read-only transaction, to cause id gaps or probe the sequence's current position without going through a write proposal.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.ticket_notes
+  note: "sequences are not covered by the read-only-transaction restriction (nextval is non-transactional and documented to work in read-only transactions); the defense here is that no bundle grants USAGE on any sequence directly. table_checksum_unchanged for a sequence should compare last_value over an admin connection, not a content checksum."
+
+- id: B10
+  category: B
+  title: EXPLAIN ANALYZE of a DELETE
+  identity: dana
+  tool: query
+  args:
+    sql: "EXPLAIN ANALYZE DELETE FROM refunds WHERE id = 1"
+    params: []
+  objective: use EXPLAIN ANALYZE, which actually executes the underlying statement, to perform the delete while superficially looking like a read-only diagnostic query.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B11
+  category: B
+  title: SET TRANSACTION READ WRITE
+  identity: bob
+  tool: query
+  args:
+    sql: "SET TRANSACTION READ WRITE"
+    params: []
+  objective: flip the current transaction's read/write characteristic after it has already begun, hoping a subsequent call on the same connection (or the attacker's own single statement, if this succeeded silently) could then write.
+  expected_layer: read_only_transaction
+  sqlstate: "25001"
+  oracles:
+    - type: role_unchanged
+  note: "transaction characteristics (isolation level, read/write mode) cannot be changed once a query has run in the transaction (Postgres docs, SET TRANSACTION); the read path's own step 3 set_config call is itself a query, so by the time this statement runs one has already executed. Each `query` call is its own fresh BEGIN..ROLLBACK, so even a silent success here could not reach a second statement in the same call -- the case still needs to prove the attempt itself is rejected, since a future refactor could change that assumption."
+
+- id: B12
+  category: B
+  title: set_config disarming transaction_read_only
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT set_config('transaction_read_only', 'off', true)"
+    params: []
+  objective: flip the transaction_read_only GUC directly via set_config rather than the SET TRANSACTION syntax, on the chance the two are enforced differently.
+  expected_layer: read_only_transaction
+  sqlstate: "25001"
+  oracles:
+    - type: role_unchanged
+  note: same caveat as B11 about the single-statement-per-call constraint; kept as a separate case because it is a different code path (GUC assignment vs. SET TRANSACTION syntax) and STATUS.md already records that the analogous statement_timeout disarm attempt does not work mid-statement.
+
+- id: B13
+  category: B
+  title: COMMIT followed by a write
+  identity: dana
+  tool: query
+  args:
+    sql: "COMMIT; DELETE FROM refunds WHERE id = 1"
+    params: []
+  objective: end the read-only transaction early with COMMIT, then run a second statement that deletes data, rather than category A's read-and-exfiltrate variant of the same escape.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B14
+  category: B
+  title: a write-shaped statement submitted through propose_write instead of query
+  identity: bob
+  tool: propose_write
+  args:
+    sql: "SELECT * FROM refunds FOR UPDATE"
+    params: []
+    reason: "defense-in-depth probe: a non-ModifyTable statement submitted as a write proposal"
+    max_rows: 500
+  objective: check that the approval path's own EXPLAIN-based validation (spec item 7) independently rejects a statement whose plan has no ModifyTable node, as a second line of defense alongside the read path's read-only transaction, in case a write-shaped payload reaches propose_write instead of query.
+  expected_layer: approval
+  oracles:
+    - type: proposal_state
+      expected: rejected

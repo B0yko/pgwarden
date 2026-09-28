@@ -1,0 +1,160 @@
+# Category C: privilege escalation.
+#
+# ADR-0002 is the design reason every one of these must fail: with a login
+# role per person, session_user cannot be changed from SQL (only current_user
+# can, via SET ROLE/SET SESSION AUTHORIZATION/set_config('role', ...)), so
+# RLS keyed on session_user (demo/sql/03_rls.sql) is not spoofable even when
+# a role-switch itself succeeds. `roles sync` grants bundle roles WITH
+# INHERIT TRUE, SET FALSE (already active, cannot be "switched to") and a
+# writer role WITH INHERIT FALSE, SET TRUE (must be explicitly switched to,
+# and only unlocks that writer role's own narrow grants). C10 is the
+# invariant case spec item 7 explicitly asks for: a writer-role switch must
+# not unlock masked or hidden columns, because a writer role's SELECT
+# privileges must stay a subset of its bundle's.
+
+- id: C01
+  category: C
+  title: SET ROLE to another person's login role
+  identity: bob
+  tool: query
+  args:
+    sql: "SET ROLE pw_u_alice"
+    params: []
+  objective: switch to another identity's own login role, which no bundle role ever grants membership in, to inherit that person's privileges (or to make later audit rows attribute bob's actions to alice).
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
+
+- id: C02
+  category: C
+  title: SET ROLE to a bundle bob is not a member of
+  identity: bob
+  tool: query
+  args:
+    sql: "SET ROLE analyst"
+    params: []
+  objective: switch to the analyst bundle role to gain its grants (products, orders, order_items, masked-customers view access) in addition to bob's own support bundle.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
+
+- id: C03
+  category: C
+  title: set_config('role', ...) spelling of the same escalation
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT set_config('role', 'analyst', true)"
+    params: []
+  objective: reach the same role switch as C02 through the set_config GUC function instead of the SET ROLE keyword, on the chance the two are checked differently, and because set_config is callable inside an ordinary SELECT (relevant if later combined with a second call in the same statement, as in C04).
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
+
+- id: C04
+  category: C
+  title: dynamic SQL through query_to_xml as a privilege side channel
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT query_to_xml('SELECT token FROM billing.payment_methods', false, false, '')"
+    params: []
+  objective: run the read against the billing canary as embedded SQL text passed to a function, rather than as pgwarden's own submitted top-level statement, testing whether privilege enforcement holds for SQL text executed indirectly through a function call and not just for the statement pgwarden itself prepares.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+  note: "this is the mechanism ADR-0002 names as the reason a shared login role with SET ROLE would be unsafe (set_config('role', ...) then query_to_xml(...) in one statement); here it is tested on bob's own unescalated login role to prove privilege checks apply to a function's internal query the same as to a direct one. STATUS.md already records that this composite escalation reproduces against the shared-login design the ADR rejected."
+
+- id: C05
+  category: C
+  title: SET SESSION AUTHORIZATION
+  identity: dana
+  tool: query
+  args:
+    sql: "SET SESSION AUTHORIZATION pw_u_alice"
+    params: []
+  objective: change session_user itself (not just current_user), which would defeat RLS policies keyed on session_user if it succeeded; only a superuser may do this, and person/machine roles are never superuser (doctor checks this).
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
+
+- id: C06
+  category: C
+  title: GRANT a bundle to self
+  identity: dana
+  tool: query
+  args:
+    sql: "GRANT analyst TO CURRENT_USER"
+    params: []
+  objective: grant dana's own login role membership in a bundle she was never configured for, without needing an admin to change pgwarden.yaml and run roles sync.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: role_unchanged
+
+- id: C07
+  category: C
+  title: ALTER ROLE to add SUPERUSER
+  identity: bob
+  tool: query
+  args:
+    sql: "ALTER ROLE pw_u_bob SUPERUSER"
+    params: []
+  objective: self-promote bob's own login role to superuser, which would defeat every other layer at once.
+  expected_layer: read_only_transaction
+  sqlstate: "25006"
+  oracles:
+    - type: role_unchanged
+
+- id: C08
+  category: C
+  title: pg_read_file
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT pg_read_file('/etc/passwd')"
+    params: []
+  objective: read an arbitrary file from the Postgres server's filesystem; requires membership in pg_read_server_files, which doctor's check confirms no person or machine role has.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["root:"]
+
+- id: C09
+  category: C
+  title: lo_import from the server filesystem
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT lo_import('/etc/passwd')"
+    params: []
+  objective: import a server-side file as a large object as an alternative path to the same server-filesystem read pg_read_file attempts, relying on large-object privileges instead.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["root:"]
+
+- id: C10
+  category: C
+  title: writer-role switch reaching beyond its own grants
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT c.full_name, c.email, c.phone FROM customers c, (SELECT set_config('role', 'support_writer', true)) AS _sw"
+    params: []
+  objective: switch to bob's own support_writer role (SET/set_config to it is allowed, unlike C01-C03) and use that to read customers columns support_writer itself was never granted, testing the invariant that a writer role's SELECT stays a subset of its bundle's SELECT and that switching to it cannot unlock a table the writer role has no grant on at all.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: bob
+  note: "the role switch to support_writer itself is expected to succeed (WITH INHERIT FALSE, SET TRUE); the attack is the data read that follows, which must fail because support_writer's own GRANTs (demo/sql/02_bundles.sql) cover only support_tickets(id, region)/UPDATE(status), ticket_notes INSERT and refunds INSERT -- nothing on customers. This is the case spec item 7's invariant explicitly asks for."

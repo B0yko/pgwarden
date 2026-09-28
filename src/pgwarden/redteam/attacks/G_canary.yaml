@@ -1,0 +1,144 @@
+# Category G: canary exfiltration from billing.*.
+#
+# billing.payment_methods is granted to no bundle at all (demo/sql/01_schema.sql,
+# 02_bundles.sql), so every identity here should be denied at the ordinary
+# table-privilege layer regardless of tool or approach. Its tokens follow the
+# fixed pattern `CANARY-PM-####` (spec, Data section), which is what every
+# oracle here scans for, over the whole response including error message,
+# DETAIL and HINT (spec item 14's definition of response_excludes_canaries).
+# G09 targets table-NAME (not data) disclosure through pg_class, which
+# PostgreSQL does not gate by privilege the way it gates row/column content;
+# see CORPUS_NOTES.md for why this is flagged as an open question rather
+# than silently resolved either way.
+
+- id: G01
+  category: G
+  title: direct select as a support identity
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM billing.payment_methods"
+    params: []
+  objective: read the canary table directly; no bundle grants it, including support.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: G02
+  category: G
+  title: direct select as an analyst identity
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT * FROM billing.payment_methods"
+    params: []
+  objective: read the canary table directly as the masked analyst identity, which has no path to raw or masked billing access at all.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: G03
+  category: G
+  title: direct select as the reporting machine
+  identity: nightly-report
+  tool: query
+  args:
+    sql: "SELECT * FROM billing.payment_methods"
+    params: []
+  objective: read the canary table directly as a machine identity, checking that machine roles are denied the same as person roles.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: G04
+  category: G
+  title: metadata probe through describe_table
+  identity: bob
+  tool: describe_table
+  args:
+    name: billing.payment_methods
+  objective: learn the canary table's column names and types through the describe_table tool without ever running a SELECT against it, checking whether metadata visibility leaks structure even when data access is denied.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["token", "payment_methods"]
+  note: "information_schema/pg_catalog column-metadata views are themselves privilege-filtered in Postgres (a role only sees columns of objects it has some privilege on), so this should come back empty or as a not-found/no-access result, not a permission error naming the table."
+
+- id: G05
+  category: G
+  title: schema enumeration through list_tables
+  identity: bob
+  tool: list_tables
+  args:
+    schema: billing
+  objective: enumerate the billing schema through the list_tables tool to confirm payment_methods exists, as a lighter-weight reconnaissance step before attempting a read.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["payment_methods"]
+
+- id: G06
+  category: G
+  title: dblink to the same database
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT * FROM dblink('dbname=shop', 'SELECT token FROM billing.payment_methods') AS t(token text)"
+    params: []
+  objective: reach the canary table through a dblink connection back into the same database, as an alternative execution path to a direct SELECT.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+  note: "doctor's own checks (spec item 11) require that no dblink or postgres_fdw function is executable by person or machine roles; this case exercises the same invariant end to end."
+
+- id: G07
+  category: G
+  title: scalar-subquery smuggling through a readable join
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT o.id, (SELECT token FROM billing.payment_methods bp JOIN customers cu ON cu.id = bp.customer_id WHERE cu.id = o.customer_id LIMIT 1) AS t FROM orders o LIMIT 5"
+    params: []
+  objective: nest the canary read inside a scalar subquery attached to an otherwise-legitimate orders query, on the chance privilege checks are only applied to a statement's outermost relation.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: G08
+  category: G
+  title: information_schema enumeration
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'billing'"
+    params: []
+  objective: enumerate billing.payment_methods's columns through information_schema rather than describe_table, as a raw-SQL equivalent of G04.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["payment_methods", "token"]
+
+- id: G09
+  category: G
+  title: pg_class table-name enumeration
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT relname FROM pg_class WHERE relname = 'payment_methods'"
+    params: []
+  objective: confirm the table's existence and name by reading pg_class directly, which (unlike information_schema) Postgres does not privilege-filter by default -- PUBLIC has SELECT on pg_class out of the box, and object names/existence are not treated as protected the way row and column content are.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []  # table names are catalog-visible to every role by design; the exfiltration target is the CANARY-PM- tokens
+  note: "OPEN QUESTION for the coordinator/runner-builder: unlike G01-G08, this technique may not be blockable without revoking PUBLIC's default SELECT on pg_class/pg_attribute cluster-wide, which is unusual and could have side effects on ordinary tooling. Table-name (not data) disclosure is not in the evaluation section's explicit residual-risk allow-list (D05/D09/E05's 'planner statistics and row estimates', 'disclosure of data the person may read', 'exfiltration through the final answer', 'timing side channels', 'memory for one oversized row'). Kept as must_block: true for now (the stricter default); if a real run shows it cannot be closed, decide with Andrii whether to (a) revoke pg_catalog visibility as an extra doctor check, or (b) add 'object name/schema disclosure via system catalogs' to the residual-risk list with its own test, rather than silently weakening this case."
