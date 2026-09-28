@@ -7,134 +7,22 @@ using tokens minted by a tests-only helper (never a production flag).
 
 from __future__ import annotations
 
-import contextlib
-import dataclasses
-import datetime as dt
 import json
-import socket
-import threading
-import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 import asyncpg
-import httpx2
 import pytest
 import pytest_asyncio
-import uvicorn
-from mcp.client import Client
-from mcp.client.streamable_http import streamable_http_client
 
-from pgwarden.app import Authenticator, create_app
+from helpers.gateway import NOW, Harness, run_gateway
 from pgwarden.config import Config
-from pgwarden.db.pools import PoolManager
-from pgwarden.db.readpath import ReadConfig
 from pgwarden.identity import machine_subject, person_subject
-from pgwarden.mcp_server import GatewayDeps
 from pgwarden.oauth.jwt import mint_access_token
-from pgwarden.oauth.keys import generate_signing_key_pem, load_signing_key
 
 pytestmark = pytest.mark.pg
 
-_NOW = dt.datetime(2025, 6, 1, 12, 0, 0, tzinfo=dt.UTC)
-
-
-def _now() -> dt.datetime:
-    return _NOW
-
-
-@dataclasses.dataclass
-class Harness:
-    base_url: str
-    config: Config
-    signing: Any
-    audience: str
-
-    def token(self, subject: str, *, client_id: str = "test-client") -> str:
-        return mint_access_token(
-            self.signing.private_key,
-            self.signing.kid,
-            issuer=self.config.public_url,
-            audience=self.audience,
-            subject=subject,
-            client_id=client_id,
-            now=_NOW,
-        )
-
-    def client(self, token: str | None) -> Client:
-        auth = _BearerAuth(token) if token else None
-        http_client = httpx2.AsyncClient(auth=auth)
-        return Client(
-            streamable_http_client(f"{self.base_url}/mcp", http_client=http_client), mode="auto"
-        )
-
-    def raw(self, token: str | None) -> httpx2.AsyncClient:
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        return httpx2.AsyncClient(base_url=self.base_url, headers=headers)
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-class _BearerAuth(httpx2.Auth):
-    def __init__(self, token: str) -> None:
-        self.token = token
-
-    def auth_flow(self, request: Any) -> Any:
-        request.headers["Authorization"] = f"Bearer {self.token}"
-        yield request
-
-
-async def _run_gateway(
-    config: Config, target_dsn: str, state_dsn: str, role_secret: str
-) -> AsyncIterator[Harness]:
-    signing = load_signing_key(generate_signing_key_pem())
-    pool_manager = PoolManager(target_dsn=target_dsn, role_secret=role_secret)
-    deps = GatewayDeps(
-        config=config,
-        pool_manager=pool_manager,
-        state_dsn=state_dsn,
-        read_config=ReadConfig(**config.read.model_dump()),
-        now=_now,
-    )
-    audience = f"{config.public_url}/mcp"
-    authenticator = Authenticator(
-        config=config,
-        signing_key=signing,
-        issuer=config.public_url,
-        audience=audience,
-        now=_now,
-    )
-    app = create_app(deps, authenticator, server_timing=True)
-
-    # Run the app in a real uvicorn server on its own thread/loop: the MCP
-    # session manager uses anyio cancel scopes that must be entered and exited in
-    # the same task, which a pytest-asyncio fixture spanning setup/teardown cannot
-    # guarantee. A separate server loop sidesteps that entirely.
-    port = _free_port()
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="on")
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    base_url = f"http://127.0.0.1:{port}"
-    deadline = time.time() + 20
-    async with httpx2.AsyncClient() as probe:
-        while time.time() < deadline:
-            with contextlib.suppress(Exception):
-                if (await probe.get(f"{base_url}/healthz")).status_code == 200:
-                    break
-            time.sleep(0.05)
-        else:  # pragma: no cover - only on a startup failure
-            raise RuntimeError("gateway did not become ready")
-    try:
-        yield Harness(base_url=base_url, config=config, signing=signing, audience=audience)
-    finally:
-        server.should_exit = True
-        thread.join(timeout=10)
+_NOW = NOW
 
 
 @pytest_asyncio.fixture
@@ -146,7 +34,7 @@ async def harness(
     pg_demo_config: object,
 ) -> AsyncIterator[Harness]:
     assert isinstance(pg_demo_config, Config)
-    async for h in _run_gateway(pg_demo_config, pg_target_dsn, pg_state_dsn, pg_role_secret):
+    async for h in run_gateway(pg_demo_config, pg_target_dsn, pg_state_dsn, pg_role_secret):
         yield h
 
 
@@ -163,7 +51,7 @@ async def low_limit_harness(
     limited = pg_demo_config.model_copy(
         update={"limits": pg_demo_config.limits.model_copy(update={"queries_per_minute": 2})}
     )
-    async for h in _run_gateway(limited, pg_target_dsn, pg_state_dsn, pg_role_secret):
+    async for h in run_gateway(limited, pg_target_dsn, pg_state_dsn, pg_role_secret):
         yield h
 
 

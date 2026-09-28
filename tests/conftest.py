@@ -23,6 +23,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "demo"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 TEST_ADMIN_DSN_VAR = "PGWARDEN_TEST_ADMIN_DSN"
 REQUIRE_PG_VAR = "PGWARDEN_REQUIRE_PG"
