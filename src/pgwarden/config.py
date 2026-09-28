@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import yaml
@@ -498,6 +499,36 @@ class Config(BaseModel):
             self._check_identity_ref(ref, f"admins[{i}]")
 
 
+_ENV_REF = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}")
+
+
+def expand_env(value: Any, environ: Mapping[str, str] | None = None) -> Any:
+    """Expand ``${NAME}`` and ``${NAME:-default}`` in every string of a YAML tree.
+
+    Lets one ``pgwarden.yaml`` follow the ports in ``.env`` (``public_url``, the
+    upstream issuer). A reference without a default to an unset variable raises
+    ``KeyError`` with the variable name. Only strings are expanded; no other
+    syntax is interpreted.
+    """
+    env = os.environ if environ is None else environ
+    if isinstance(value, str):
+
+        def repl(match: re.Match[str]) -> str:
+            name, default = match.group(1), match.group(2)
+            if name in env:
+                return env[name]
+            if default is not None:
+                return default
+            raise KeyError(name)
+
+        return _ENV_REF.sub(repl, value)
+    if isinstance(value, list):
+        return [expand_env(v, env) for v in value]
+    if isinstance(value, dict):
+        return {k: expand_env(v, env) for k, v in value.items()}
+    return value
+
+
 def load_config(path: str | Path) -> Config:
     """Load and validate ``pgwarden.yaml`` from ``path``.
 
@@ -517,6 +548,10 @@ def load_config(path: str | Path) -> Config:
         data = {}
     if not isinstance(data, dict):
         raise ConfigError(f"{p}: the top-level YAML document must be a mapping")
+    try:
+        data = expand_env(data)
+    except KeyError as exc:
+        raise ConfigError(f"{p}: environment variable {exc.args[0]} is not set") from exc
     try:
         return Config.model_validate(data)
     except ValidationError as exc:

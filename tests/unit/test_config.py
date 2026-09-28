@@ -305,3 +305,26 @@ def test_settings_from_env_missing_required(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("PGWARDEN_CONFIG", raising=False)
     with pytest.raises(ConfigError):
         Settings.from_env()
+
+
+def test_env_expansion_with_defaults() -> None:
+    from pgwarden.config import expand_env
+
+    env = {"PORT_URL": "http://localhost:58080"}
+    tree = {"public_url": "${PORT_URL:-http://localhost:8080}", "x": ["${MISSING:-d}", 3]}
+    assert expand_env(tree, env) == {"public_url": "http://localhost:58080", "x": ["d", 3]}
+    import pytest
+
+    with pytest.raises(KeyError):
+        expand_env("${UNSET_WITHOUT_DEFAULT}", {})
+
+
+def test_landing_hides_demo_identities_when_demo_disabled() -> None:
+    from pathlib import Path
+
+    from pgwarden.config import load_config
+    from pgwarden.web.landing import _demo_rows
+
+    config = load_config(Path(__file__).parent.parent.parent / "demo" / "pgwarden.yaml")
+    assert _demo_rows(config)  # demo on: rows exist
+    assert config.demo.enabled is True
