@@ -60,6 +60,9 @@ DEFAULT_MAX_TURNS = 12
 IDP_SUB = {"alice": "usr_alice", "bob": "usr_bob", "dana": "usr_dana"}
 EXFIL_HOST = "exfil.example.net"
 UNKNOWN_PROVIDER = "unknown"
+MAX_ATTEMPTS = 8
+MAX_BACKOFF_S = 60.0
+RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 HARDWARE_FALLBACK = "unspecified"
 # Rough size of one episode, from the previous full run (60 episodes: 357,853 prompt and
 # 14,142 completion tokens), used only for the estimate printed before a run.
@@ -215,6 +218,10 @@ def _cap(text: str) -> str:
     return text if len(text) <= TOOL_RESULT_CAP else text[:TOOL_RESULT_CAP] + "...[truncated]"
 
 
+class OpenRouterError(RuntimeError):
+    """OpenRouter refused a request, or kept failing after the retries."""
+
+
 class OpenRouterClient:
     """An OpenAI-compatible chat client for OpenRouter.
 
@@ -251,24 +258,43 @@ class OpenRouterClient:
         }
 
     async def complete(self, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """One chat completion, retrying rate limits, provider errors and dropped connections.
+
+        Waits follow ``Retry-After`` when the response has one, else double from 2 s up to
+        ``MAX_BACKOFF_S``. After ``MAX_ATTEMPTS`` tries it raises ``OpenRouterError`` with
+        the last status and a snippet of the response body.
+        """
         body = self.request_body(model, messages)
         delay = 2.0
+        last = "no response"
         async with httpx.AsyncClient(timeout=120.0) as http:
-            for attempt in range(6):
-                resp = await http.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json=body,
-                )
-                if resp.status_code in (429, 500, 502, 503) and attempt < 5:
-                    retry_after = float(resp.headers.get("retry-after") or delay)
-                    await asyncio.sleep(min(retry_after, 30.0))
-                    delay = min(delay * 2, 30.0)
-                    continue
-                resp.raise_for_status()
-                result: dict[str, Any] = resp.json()
-                return result
-        raise RuntimeError("unreachable")  # pragma: no cover
+            for attempt in range(MAX_ATTEMPTS):
+                retry_after: float | None = None
+                try:
+                    resp = await http.post(
+                        f"{self.base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {self.api_key}"},
+                        json=body,
+                    )
+                except httpx.TransportError as exc:
+                    last = f"{type(exc).__name__}: {exc}"
+                else:
+                    if resp.status_code in RETRY_STATUSES:
+                        last = f"HTTP {resp.status_code}: {resp.text[:300]}"
+                        header = resp.headers.get("retry-after")
+                        retry_after = float(header) if header and header.isdigit() else None
+                    elif resp.status_code >= 400:
+                        raise OpenRouterError(f"HTTP {resp.status_code}: {resp.text[:300]}")
+                    else:
+                        result: dict[str, Any] = resp.json()
+                        if result.get("choices"):
+                            return result
+                        # HTTP 200 whose body is an error (a provider failed mid-request)
+                        last = f"HTTP {resp.status_code} without choices: {resp.text[:300]}"
+                if attempt < MAX_ATTEMPTS - 1:
+                    await asyncio.sleep(min(retry_after or delay, MAX_BACKOFF_S))
+                    delay = min(delay * 2, MAX_BACKOFF_S)
+        raise OpenRouterError(f"gave up after {MAX_ATTEMPTS} attempts; last: {last}")
 
 
 def parse_provider_pins(items: Sequence[str], model_ids: Sequence[str]) -> dict[str, list[str]]:
@@ -608,6 +634,7 @@ __all__ = [
     "EpisodeResult",
     "Injection",
     "OpenRouterClient",
+    "OpenRouterError",
     "command_line",
     "estimate_cost_usd",
     "expected_answer",

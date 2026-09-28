@@ -16,6 +16,7 @@ import pytest
 from typer.testing import CliRunner
 
 from pgwarden.cli import app
+from pgwarden.docsgen import render_llm_table
 from pgwarden.redteam import llm as llm_mod
 from pgwarden.redteam import mcp_client
 from pgwarden.redteam.ledger import (
@@ -28,6 +29,7 @@ from pgwarden.redteam.ledger import (
 from pgwarden.redteam.llm import (
     EpisodeResult,
     OpenRouterClient,
+    OpenRouterError,
     estimate_cost_usd,
     parse_provider_pins,
     provider_matches_pin,
@@ -94,6 +96,71 @@ async def test_request_actually_sends_the_pin(monkeypatch: pytest.MonkeyPatch) -
     assert seen[0]["provider"] == {"order": ["alibaba"], "allow_fallbacks": False}
     assert seen[0]["temperature"] == 0
     assert seen[1]["provider"] == {"allow_fallbacks": False}
+
+
+def _mock_openrouter(
+    monkeypatch: pytest.MonkeyPatch, responses: list[httpx.Response]
+) -> tuple[list[float], list[httpx.Request]]:
+    """Serve ``responses`` in order; return the sleeps taken and the requests seen."""
+    sleeps: list[float] = []
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return responses.pop(0)
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        llm_mod.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    monkeypatch.setattr(llm_mod.asyncio, "sleep", fake_sleep)
+    return sleeps, requests
+
+
+async def test_complete_retries_rate_limits_and_error_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps, requests = _mock_openrouter(
+        monkeypatch,
+        [
+            httpx.Response(429, headers={"retry-after": "7"}, text="slow down"),
+            httpx.Response(200, json={"error": {"message": "provider failed", "code": 502}}),
+            httpx.Response(503, text="unavailable"),
+            httpx.Response(200, json=_completion("DeepInfra")),
+        ],
+    )
+    client = OpenRouterClient("https://x/api/v1", "k", provider_orders={DEEPSEEK: ["deepinfra"]})
+    out = await client.complete(DEEPSEEK, [{"role": "user", "content": "hi"}])
+    assert completion_provider(out) == "DeepInfra"
+    assert len(requests) == 4
+    assert sleeps == [7.0, 4.0, 8.0]  # Retry-After first, then doubling from 2 s (2, 4, 8)
+
+
+async def test_complete_gives_up_with_the_last_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps, requests = _mock_openrouter(
+        monkeypatch, [httpx.Response(429, text="rate limited by upstream")] * llm_mod.MAX_ATTEMPTS
+    )
+    client = OpenRouterClient("https://x/api/v1", "k")
+    with pytest.raises(OpenRouterError, match=r"HTTP 429: rate limited by upstream"):
+        await client.complete(QWEN, [{"role": "user", "content": "hi"}])
+    assert len(requests) == llm_mod.MAX_ATTEMPTS
+    assert len(sleeps) == llm_mod.MAX_ATTEMPTS - 1
+    assert max(sleeps) <= llm_mod.MAX_BACKOFF_S
+
+
+async def test_complete_does_not_retry_a_rejected_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps, requests = _mock_openrouter(
+        monkeypatch, [httpx.Response(400, text="unsupported parameter")]
+    )
+    client = OpenRouterClient("https://x/api/v1", "k")
+    with pytest.raises(OpenRouterError, match="HTTP 400: unsupported parameter"):
+        await client.complete(QWEN, [{"role": "user", "content": "hi"}])
+    assert len(requests) == 1 and sleeps == []
 
 
 def test_parse_provider_pins() -> None:
@@ -585,3 +652,122 @@ def test_cli_fails_for_a_model_openrouter_does_not_list(monkeypatch: pytest.Monk
     )
     assert result.exit_code == 1
     assert "gone/model" in result.output
+
+
+# --- the README table ---------------------------------------------------------------
+
+
+def _results_doc(per_model: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "per_model": per_model,
+        "episodes": [],
+        "ledger": {"spent_usd": 0.02, "budget_usd": 0.15},
+    }
+
+
+def _row(model: str, **over: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "model": model,
+        "episodes": 30,
+        "tasks_solved": 30,
+        "attempts": 0,
+        "attempts_blocked": 0,
+        "rows_beyond_privilege": 0,
+        "writes_without_approval": 0,
+        "exfil_episodes": 0,
+    }
+    base.update(over)
+    return base
+
+
+def test_llm_table_names_the_providers_that_served_the_calls() -> None:
+    doc = _results_doc(
+        [
+            _row(
+                DEEPSEEK,
+                providers_served={"DeepInfra": 210},
+                provider_pin=["deepinfra"],
+                calls_outside_pin=0,
+            ),
+            _row(QWEN, providers_served={"Alibaba": 150}, provider_pin=None, calls_outside_pin=0),
+        ]
+    )
+    text = render_llm_table(doc)
+    assert (
+        f"`{DEEPSEEK}`: DeepInfra 210 (pinned to `deepinfra`); `{QWEN}`: Alibaba 150 (not pinned)."
+    ) in text
+    assert "outside the pin" not in text
+    assert text.rstrip().splitlines()[-1].startswith("Total spend: $0.0200 of a $0.15 budget")
+
+
+def test_llm_table_says_when_calls_left_the_pin_and_skips_older_results() -> None:
+    doc = _results_doc(
+        [
+            _row(
+                DEEPSEEK,
+                providers_served={"DeepInfra": 3, "Together": 2},
+                provider_pin=["deepinfra"],
+                calls_outside_pin=2,
+            )
+        ]
+    )
+    assert "DeepInfra 3, Together 2 (pinned to `deepinfra`, 2 calls outside the pin)" in (
+        render_llm_table(doc)
+    )
+    assert "Provider that served" not in render_llm_table(_results_doc([_row(QWEN)]))
+
+
+def test_cli_keeps_a_partial_run_when_openrouter_keeps_failing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for k, v in _ENV.items():
+        monkeypatch.setenv(k, v)
+    out = tmp_path / "partial.json"
+
+    async def fake_prices(base: str, key: str, models: list[str]) -> dict[str, ModelPrice]:
+        return {QWEN: ModelPrice(3e-8, 1.3e-7)}
+
+    async def fake_limits(client: Any) -> None:
+        return None
+
+    calls = {"n": 0}
+
+    async def flaky_episode(**kw: Any) -> EpisodeResult:
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise OpenRouterError("gave up after 8 attempts; last: HTTP 429: rate limited")
+        return EpisodeResult(
+            model=kw["model"],
+            task_id=kw["task"]["id"],
+            trial=kw["trial"],
+            identity=kw["task"]["identity"],
+            solved=True,
+            turns=1,
+            markers_seen=[],
+            out_of_policy_attempts=[],
+            rows_beyond_privilege=0,
+            writes_executed_without_approval=0,
+            exfil_in_answer=False,
+            final_answer="ok",
+            cost_usd=0.0,
+            providers_served={"Alibaba": 1},
+        )
+
+    monkeypatch.setattr("pgwarden.redteam.ledger.fetch_prices", fake_prices)
+    monkeypatch.setattr(llm_mod, "fetch_gateway_limits", fake_limits)
+    monkeypatch.setattr(llm_mod, "run_episode", flaky_episode)
+    result = CliRunner().invoke(
+        app,
+        [
+            "redteam", "llm", "--models", QWEN, "--trials", "2", "--tasks", "2",
+            "--target-url", "http://localhost:1", "--report", str(out),
+        ],
+    )  # fmt: skip
+    assert result.exit_code == 1
+    assert "stopped early and is incomplete" in result.output
+    assert "[2/4]" in result.output  # one progress line per finished episode
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert doc["stopped_early"] is True
+    assert doc["stop_reason"].startswith("OpenRouterError: gave up after 8 attempts")
+    assert len(doc["episodes"]) == 2
+    assert doc["per_model"][0]["providers_served"] == {"Alibaba": 2}
