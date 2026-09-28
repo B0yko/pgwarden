@@ -4,10 +4,13 @@ The benchmark container has no Docker socket, so ``devtools/bench/run.sh`` sampl
 gateway from the host while the run is in progress and leaves plain text files in a
 scratch directory:
 
+Each sampler runs at least once a second (docker stats streams about two frames a second and
+the polls run about every half second); the number of samples of each is recorded.
+
 * ``docker-stats.txt``: the stream of ``docker stats --format '{{.CPUPerc}}|{{.MemUsage}}'``
   for the gateway container (CPU as a percentage of one core, as Docker reports it),
-* ``gateway-rss.txt``: the ``VmRSS`` line of the gateway process, once a second,
-* ``pg-connections.txt``: connections held by pgwarden's roles, once a second,
+* ``gateway-rss.txt``: the ``VmRSS`` line of the gateway process,
+* ``pg-connections.txt``: connections held by pgwarden's roles,
 * ``audit-verify.txt`` and ``audit-verify.exit``: the output and exit code of
   ``pgwarden audit verify`` after the run,
 * ``raw.json``: the JSON document the benchmark command printed in the container.
@@ -115,7 +118,6 @@ def host_summary(directory: Path) -> dict[str, Any]:
     rss = parse_vmrss(_read(directory, "gateway-rss.txt"))
     conns = parse_int_lines(_read(directory, "pg-connections.txt"))
     summary: dict[str, Any] = {
-        "sample_interval_s": 1,
         "gateway_cpu_percent_of_one_core_peak": round(max((c for c, _ in stats), default=0.0), 1),
         "gateway_cpu_percent_of_one_core_mean": (
             round(sum(c for c, _ in stats) / len(stats), 1) if stats else 0.0

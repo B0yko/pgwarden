@@ -77,6 +77,7 @@ class LatencyResult:
     overhead_p50: float
     overhead_p95: float
     server_timing_median: dict[str, float]
+    rows: int = 0  # rows the query returns, checked to be the same on every path
 
 
 async def _time_direct(
@@ -106,23 +107,25 @@ class BenchCallError(RuntimeError):
     """A timed gateway call did not return rows. A run with failing calls proves nothing."""
 
 
-def check_call(resp: mcp_client.ToolResponse) -> None:
-    """Raise unless the gateway answered a timed ``query`` call with a result, not an error."""
+def check_call(resp: mcp_client.ToolResponse, expected_rows: int | None = None) -> None:
+    """Raise unless the gateway answered a timed ``query`` call with the expected rows."""
     err = resp.tool_error
     if resp.status != 200 or err is not None:
         detail = err.get("message") if err else resp.text[:200]
-        hint = (
-            " (raise the limits: run the bench config)"
-            if err and err.get("sqlstate") == "53400"
-            else ""
-        )
+        limit = err is not None and err.get("sqlstate") == "53400"
+        hint = " (raise the limits: run the bench config)" if limit else ""
         raise BenchCallError(
             f"the gateway refused a timed call (HTTP {resp.status}): {detail}{hint}"
+        )
+    if expected_rows is not None and resp.result.get("row_count") != expected_rows:
+        raise BenchCallError(
+            f"the gateway returned {resp.result.get('row_count')} rows where the database "
+            f"returns {expected_rows}: the timed paths are not running the same query"
         )
 
 
 async def _time_gateway(
-    client: StackClient, token: str, sql: str, params: list[Any], n: int
+    client: StackClient, token: str, sql: str, params: list[Any], n: int, expected_rows: int
 ) -> tuple[list[float], list[dict[str, float]]]:
     samples: list[float] = []
     spans: list[dict[str, float]] = []
@@ -133,7 +136,7 @@ async def _time_gateway(
                 client.mcp_endpoint, token, "query", {"sql": sql, "params": params}, http=http
             )
             samples.append((time.perf_counter() - start) * 1000.0)
-            check_call(resp)
+            check_call(resp, expected_rows)
             spans.append(_parse_server_timing(resp.headers.get("server-timing", "")))
     return samples, spans
 
@@ -176,15 +179,16 @@ async def run_latency(
             print(f"  {label}{q['label']}", file=sys.stderr, flush=True)
             conn = await asyncpg.connect(role_dsn, timeout=10, statement_cache_size=0)
             try:
+                rows = len(await conn.fetch(q["sql"], *q["params"]))
                 await _time_direct(conn, q["sql"], q["params"], warmup)
                 direct = await _time_direct(conn, q["sql"], q["params"], iterations)
             finally:
                 await conn.close()
             await _time_wrapper(pm, role, q["sql"], q["params"], warmup, cfg)
             wrapper = await _time_wrapper(pm, role, q["sql"], q["params"], iterations, cfg)
-            await _time_gateway(client, token.access_token, q["sql"], q["params"], warmup)
+            await _time_gateway(client, token.access_token, q["sql"], q["params"], warmup, rows)
             gateway, spans = await _time_gateway(
-                client, token.access_token, q["sql"], q["params"], iterations
+                client, token.access_token, q["sql"], q["params"], iterations, rows
             )
             span_median = {
                 name: _percentile([s[name] for s in spans if name in s], 50)
@@ -204,6 +208,7 @@ async def run_latency(
                     overhead_p50=g50 - d50,
                     overhead_p95=g95 - d95,
                     server_timing_median=span_median,
+                    rows=rows,
                 )
             )
     finally:
@@ -275,6 +280,7 @@ def aggregate_repetitions(reps: list[list[LatencyResult]]) -> list[dict[str, Any
         for pct in ("p50", "p95"):
             diffs = [getattr(r, f"gateway_{pct}") - getattr(r, f"direct_{pct}") for r in rs]
             spread[f"overhead_{pct}"] = [_r(min(diffs)), _r(max(diffs))]
+        row["rows"] = rs[0].rows
         row["spread"] = spread
         spans = sorted({name for r in rs for name in r.server_timing_median})
         row["server_timing_median"] = {

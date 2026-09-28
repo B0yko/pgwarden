@@ -23,9 +23,11 @@
 #   PGWARDEN_BENCH_LOAD_ARGS   arguments of `pgwarden bench load` (default: the spec's
 #                              "--identities 20 --concurrency 20 --duration 60 --mix pk:60,filter:30,agg:10")
 #
-# Sampled from the host while the load runs, about once a second: the gateway's CPU (docker
-# stats, percent of one core), its RSS (VmRSS of the server process), and the Postgres
+# Sampled from the host while the load runs, at least once a second (docker stats streams
+# about two frames a second, the two polls run about every half second): the gateway's CPU
+# (docker stats, percent of one core), its RSS (VmRSS of the server process), and the Postgres
 # connections held by pgwarden's roles (pg_stat_activity, through the postgres container).
+# The results file records how many samples each one got.
 # The stack is left on the bench config; `restore` undoes that.
 set -euo pipefail
 

@@ -278,7 +278,9 @@ def render_latency_table(data: dict[str, Any]) -> str:
             _pair(q["overhead_p50"], q["overhead_p95"])
             + _range_pair(sp, "overhead_p50", "overhead_p95"),
         ]
-        lines.append(f"| {q['query']} | " + " | ".join(cells) + " |")
+        rows = q.get("rows")
+        label = f"{q['query']} ({rows} row{'s' if rows != 1 else ''})" if rows else q["query"]
+        lines.append(f"| {label} | " + " | ".join(cells) + " |")
     lines += [
         "",
         f"Milliseconds, median of {reps} repetitions of {data['iterations']} timed calls "
@@ -388,9 +390,14 @@ def render_load_table(data: dict[str, Any]) -> str:
             (
                 "Gateway peak CPU (`docker stats`, percent of one core)",
                 f"{host['gateway_cpu_percent_of_one_core_peak']:g}% "
-                f"(mean {host['gateway_cpu_percent_of_one_core_mean']:g}%)",
+                f"(mean {host['gateway_cpu_percent_of_one_core_mean']:g}%, "
+                f"{host.get('gateway_cpu_samples', 0)} samples)",
             ),
-            ("Gateway peak RSS", f"{host['gateway_rss_mib_peak']:g} MiB"),
+            (
+                "Gateway peak RSS",
+                f"{host['gateway_rss_mib_peak']:g} MiB "
+                f"({host.get('gateway_rss_samples', 0)} samples)",
+            ),
         ]
     if audit:
         outcome = "OK" if audit.get("ok") else "FAILED"

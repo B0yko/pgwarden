@@ -77,6 +77,7 @@ def test_aggregate_takes_the_median_across_repetitions() -> None:
     assert pk["overhead_p50"] == pytest.approx(10.0)
     assert pk["overhead_p95"] == pytest.approx(25.0 - 3.0)
     assert pk["server_timing_median"] == {"auth": 1.0, "db": 3.0}
+    assert pk["rows"] == 0  # not recorded by these fixtures
 
 
 def test_aggregate_reports_min_and_max_of_the_repetitions() -> None:
@@ -97,8 +98,11 @@ def test_aggregate_with_one_repetition_has_a_zero_spread() -> None:
     assert row["spread"]["gateway_p50"] == [55.0, 55.0]
 
 
-def _tool_response(*, status: int = 200, error: dict[str, object] | None = None) -> object:
-    body = {"result": {"structuredContent": {"error": error} if error else {"rows": []}}}
+def _tool_response(
+    *, status: int = 200, error: dict[str, object] | None = None, row_count: int = 1
+) -> object:
+    ok = {"columns": [], "rows_untrusted": [], "row_count": row_count}
+    body = {"result": {"structuredContent": {"error": error} if error else ok}}
     return mcp_client.ToolResponse(status=status, text=json.dumps(body), body=body)
 
 
@@ -110,6 +114,12 @@ def test_a_refused_timed_call_aborts_the_run() -> None:
         )
     with pytest.raises(BenchCallError, match="HTTP 401"):
         check_call(_tool_response(status=401))  # type: ignore[arg-type]
+
+
+def test_a_timed_call_must_return_the_rows_the_database_returns() -> None:
+    check_call(_tool_response(row_count=30), expected_rows=30)  # type: ignore[arg-type]
+    with pytest.raises(BenchCallError, match="returned 0 rows where the database returns 30"):
+        check_call(_tool_response(row_count=0), expected_rows=30)  # type: ignore[arg-type]
 
 
 # -- cold start ---------------------------------------------------------------------------

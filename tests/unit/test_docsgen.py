@@ -92,6 +92,7 @@ def _latency_doc(*, pk_overhead: float = 4.1, cold: dict[str, Any] | None = None
         "queries": [
             {
                 "query": "primary-key lookup",
+                "rows": 1,
                 "direct_p50": 0.44,
                 "direct_p95": 1.05,
                 "wrapper_p50": 2.1,
@@ -105,6 +106,7 @@ def _latency_doc(*, pk_overhead: float = 4.1, cold: dict[str, Any] | None = None
             },
             {
                 "query": "monthly aggregate over orders",
+                "rows": 24,
                 "direct_p50": 41.2,
                 "direct_p95": 50.0,
                 "wrapper_p50": 44.0,
@@ -128,10 +130,16 @@ def test_latency_table_has_the_spec_columns_and_spreads() -> None:
         "| Query | Direct p50 / p95 | Direct + wrapper p50 / p95 | Via pgwarden p50 / p95 "
         "| Overhead p50 / p95 (ms) |"
     )
-    pk = next(line for line in table.splitlines() if line.startswith("| primary-key lookup"))
+    pk = next(
+        line for line in table.splitlines() if line.startswith("| primary-key lookup (1 row) |")
+    )
     assert "0.44 / 1.05<br><sub>0.40-0.50 / 0.90-1.20</sub>" in pk
     assert "4.10 / 7.35<br><sub>3.90-4.60 / 6.90-7.80</sub>" in pk
-    agg = next(line for line in table.splitlines() if line.startswith("| monthly aggregate"))
+    agg = next(
+        line
+        for line in table.splitlines()
+        if line.startswith("| monthly aggregate over orders (24 rows)")
+    )
     assert "41.2 / 50.0" in agg  # one decimal from 10 ms up
     assert "median of 3 repetitions of 1000 timed calls after 100 warm-up calls" in table
 
@@ -211,7 +219,9 @@ def _load_doc(*, p95: float = 88.0, errors: int = 0) -> dict[str, Any]:
         "host_samples": {
             "gateway_cpu_percent_of_one_core_peak": 96.4,
             "gateway_cpu_percent_of_one_core_mean": 81.2,
+            "gateway_cpu_samples": 121,
             "gateway_rss_mib_peak": 131.5,
+            "gateway_rss_samples": 171,
         },
         "audit_verify": {
             "ok": True,
@@ -232,8 +242,8 @@ def test_load_table_has_every_required_measure() -> None:
         "| Latency p50 / p95 / p99 | 24.2 / 88.0 / 130.4 ms |",
         "| Error rate (rate-limited calls excluded) | 0.00% (0 errors) |",
         "| 20 |",
-        "96.4% (mean 81.2%)",
-        "| Gateway peak RSS | 131.5 MiB |",
+        "96.4% (mean 81.2%, 121 samples)",
+        "| Gateway peak RSS | 131.5 MiB (171 samples) |",
         "OK: chain intact through seq 61000, head seq 61000",
     ):
         assert expected in table, expected
