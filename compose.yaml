@@ -1,0 +1,145 @@
+# pgwarden demo stack:  docker compose up -d --wait
+#
+# Postgres 16 (target database `shop` + state database `pgwarden`), the in-repo
+# mock OIDC provider, Mailpit, a one-shot `secrets` job that writes every secret
+# into the gitignored ./.pgwarden-dev/, a one-shot `init` job (db init, roles
+# sync, masking apply, machine secrets, doctor), and the gateway built from
+# source. Every host port comes from .env and is bound to 127.0.0.1.
+#
+# The gateway mounts only its own secret files, read-only. The admin DSN and the
+# Postgres superuser password are mounted only into `init`.
+
+name: ${COMPOSE_PROJECT_NAME:-pgwarden}
+
+x-gateway-image: &gateway-image
+  image: pgwarden:dev
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+x-public-env: &public-env
+  PGWARDEN_PUBLIC_URL: http://localhost:${GATEWAY_PORT:-8080}
+  PGWARDEN_OIDC_ISSUER: http://localhost:${IDP_PORT:-9400}
+  PGWARDEN_CONFIG: /etc/pgwarden/pgwarden.yaml
+  PGWARDEN_TARGET_DSN: postgresql://postgres:5432/shop?sslmode=disable
+
+services:
+  secrets:
+    <<: *gateway-image
+    user: "0:0"
+    entrypoint: ["python", "/devtools/compose/gen_secrets.py"]
+    command: []
+    environment:
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    volumes:
+      - ./.pgwarden-dev:/dev-secrets
+      - ./devtools/compose/gen_secrets.py:/devtools/compose/gen_secrets.py:ro
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/pgwarden-dev/postgres/postgres_password
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./.pgwarden-dev/postgres:/run/pgwarden-dev/postgres:ro
+      - ./devtools/compose/initdb:/docker-entrypoint-initdb.d:ro
+      - ./demo/sql:/demo-sql:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mock-idp:
+    image: pgwarden-mock-idp:dev
+    build:
+      context: devtools/mock_idp
+    depends_on:
+      secrets:
+        condition: service_completed_successfully
+    environment:
+      MOCK_IDP_DEV_ONLY: "1"
+      MOCK_IDP_ISSUER: http://localhost:${IDP_PORT:-9400}
+      MOCK_IDP_INTERNAL_URL: http://mock-idp:9400
+      MOCK_IDP_CLIENT_ID: pgwarden-demo
+      MOCK_IDP_CLIENT_SECRET_FILE: /run/pgwarden-dev/idp/oidc_client_secret
+      MOCK_IDP_REDIRECT_URIS: http://localhost:${GATEWAY_PORT:-8080}/oauth/callback
+    volumes:
+      - ./.pgwarden-dev/idp:/run/pgwarden-dev/idp:ro
+    ports:
+      - "127.0.0.1:${IDP_PORT:-9400}:9400"
+
+  mailpit:
+    image: axllent/mailpit:v1.29@sha256:757f22b56c1da03570afdb3d259effe5091018008a81bbedc8158cee7e16fdbc
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_WEB_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  init:
+    <<: *gateway-image
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        pgwarden db init
+        pgwarden roles sync
+        pgwarden masking apply
+        pgwarden machine secret --all --out-dir /dev-secrets/machines
+        pgwarden doctor --record
+    environment:
+      <<: *public-env
+      PGWARDEN_CONFIG: /etc/pgwarden/${PGWARDEN_DEMO_CONFIG:-pgwarden.yaml}
+      PGWARDEN_ADMIN_DSN_FILE: /dev-secrets/admin/admin_dsn
+      PGWARDEN_STATE_DSN_FILE: /dev-secrets/gateway/state_dsn
+      PGWARDEN_ROLE_SECRET_FILE: /dev-secrets/gateway/role_secret
+    volumes:
+      - ./.pgwarden-dev:/dev-secrets
+      - ./demo:/etc/pgwarden:ro
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  gateway:
+    <<: *gateway-image
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mock-idp:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      <<: *public-env
+      PGWARDEN_CONFIG: /etc/pgwarden/${PGWARDEN_DEMO_CONFIG:-pgwarden.yaml}
+      PGWARDEN_STATE_DSN_FILE: /run/pgwarden/state_dsn
+      PGWARDEN_ROLE_SECRET_FILE: /run/pgwarden/role_secret
+      PGWARDEN_SIGNING_KEY_FILE: /run/pgwarden/signing_key.pem
+      PGWARDEN_SESSION_SECRET_FILE: /run/pgwarden/session_secret
+      PGWARDEN_OIDC_CLIENT_SECRET_FILE: /run/pgwarden/oidc_client_secret
+      PGWARDEN_SMTP_URL: smtp://mailpit:1025
+      PGWARDEN_SERVER_TIMING: "1"
+    volumes:
+      - ./demo:/etc/pgwarden:ro
+      - ./.pgwarden-dev/gateway:/run/pgwarden:ro
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:8080"
+
+volumes:
+  pgdata:

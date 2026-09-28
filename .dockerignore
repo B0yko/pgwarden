@@ -1,0 +1,21 @@
+# Only pyproject.toml, uv.lock, README.md, LICENSE, NOTICE and src/ are needed.
+.git
+.venv
+.pgwarden-dev
+.pgwarden-test*
+.claude
+.mypy_cache
+.ruff_cache
+.pytest_cache
+**/__pycache__
+**/*.pyc
+tests
+devtools
+deploy
+docs
+demo
+.github
+node_modules
+*.egg-info
+dist
+build
