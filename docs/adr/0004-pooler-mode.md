@@ -58,7 +58,7 @@ the *same* backend pid; two connections opened directly against
 `pgwarden-testpg` (no pooler) always returned two *different* pids. The
 doctor test (`tests/integration/test_doctor.py`) asserts both outcomes
 against the real containers, and skips only when the bouncer fixture is
-absent and `PGWARDEN_REQUIRE_PG` is unset (CI always has it).
+absent and `PGWARDEN_REQUIRE_PG` is unset (CI starts a PgBouncer container for it).
 
 ## Consequences
 

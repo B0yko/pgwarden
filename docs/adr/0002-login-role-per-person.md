@@ -43,8 +43,7 @@ read. After `SET ROLE u_a`, it runs the same request in two shapes:
   `select set_config('role','u_b',true), (select v from tb limit 1)`.
 
 `tests/integration/test_shared_login_experiment.py` runs this for real and
-records the observed result (`_work/pgwarden/adr0002-result.txt`, gitignored
-scratch output, not part of this repository):
+asserts the observed result:
 
 > Reproduced: with one shared login role granted SET-TRUE membership in two
 > person roles, a single statement -- `select set_config('role','u_b',true),
@@ -85,11 +84,13 @@ actually threatens:
 ## Decision
 
 Each person and machine gets its own dedicated Postgres `LOGIN` role,
-connected to directly by `pgwarden.db.pools.PoolManager`. Nothing in the
-product ever runs `SET ROLE`, `SET SESSION AUTHORIZATION` or
-`set_config('role', ...)` against a person's or machine's connection
-(masking/writer roles are reached through Postgres's own bundle grants and
-membership, not through role-switching SQL the gateway issues).
+connected to directly by `pgwarden.db.pools.PoolManager`. The read path never changes role, and nothing in the product
+runs `SET SESSION AUTHORIZATION`. The only role switch is the write path's: an
+approved write runs, in its own read-write transaction, after pgwarden's fixed
+`set_config('role', <writer role>, true)` with a bound value, where the writer role is
+a role the person's login role is a member of. `session_user`, which is what row-level
+security keys on, never changes. Masking is reached through the person's bundle grants
+and the `search_path`, not through role-switching SQL.
 
 - The role's password is never chosen or typed anywhere: it is
   `HMAC-SHA256(PGWARDEN_ROLE_SECRET, role_name)`, sent to Postgres only as a

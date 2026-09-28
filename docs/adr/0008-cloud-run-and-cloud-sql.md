@@ -94,8 +94,7 @@ Reasons, in order of how much they actually drove the decision:
 
 ## Why not Fly.io
 
-Fly.io was the other real candidate (it is the platform used in a sibling
-portfolio project). It was not chosen here because:
+Fly.io was the other real candidate. It was not chosen here because:
 
 - Fly Postgres does not offer an equivalent to Cloud SQL's unix-socket
   auth-proxy integration or Secret Manager's fine-grained per-secret IAM
@@ -104,9 +103,6 @@ portfolio project). It was not chosen here because:
   app-wide secret set, not one IAM binding per secret), which would make
   the "service account can never read the admin secret" invariant this
   module tests for harder to express and to verify statically.
-- This portfolio already has a Fly.io deployment example elsewhere; a
-  second, different target (Cloud Run) demonstrates GCP IAM and Secret
-  Manager modelling instead of repeating the same pattern.
 
 This is a build-time engineering trade-off, not a claim that Fly.io is
 unsuitable for this kind of service in general.
@@ -148,8 +144,9 @@ unsuitable for this kind of service in general.
 
 This module was validated and scanned (`terraform fmt`, `validate`,
 `test`, `tflint`, `trivy config`) but **not applied to a real GCP project**
-as part of building v0.1. See `TERRAFORM_RESULTS.md` for exact versions,
-image digests and check output. It was never applied because doing so
+as part of building v0.1. `deploy/terraform/check.sh` runs the checks
+through pinned Docker images (Terraform 1.16.4, TFLint 0.64.0, Trivy 0.74.0), and CI runs it
+on every push. It was never applied because doing so
 requires a project and a Google identity that this build environment does
 not have and must not assume; if a project is offered later, applying it
 still needs the operator to supply the OIDC client secret value (Secret

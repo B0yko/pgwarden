@@ -36,8 +36,9 @@ upstream: { name: google, preset: google, issuer: https://accounts.google.com, c
 ```
 
 Create an OAuth client (type "Web application") in Google Cloud, add the redirect
-URI, and set the secret in `PGWARDEN_OIDC_CLIENT_SECRET`. `email_verified` and the
-`hd` (hosted-domain) claim are honoured.
+URI, and set the secret in `PGWARDEN_OIDC_CLIENT_SECRET`. `email_verified` is honoured.
+pgwarden does not restrict logins by the `hd` (hosted-domain) claim: only people mapped in
+`pgwarden.yaml` get a role, whatever the account's domain.
 
 ## Microsoft Entra ID (single tenant)
 
