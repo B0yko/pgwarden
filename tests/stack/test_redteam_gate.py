@@ -1,7 +1,7 @@
 """The red-team release gate, run against the live compose stack (marker `stack`).
 
 Runs the whole deterministic corpus (categories A to I plus the benign controls)
-through ``redteam.runner.Runner`` and asserts the gate from the spec: every
+through ``redteam.runner.Runner`` and asserts the release gate: every
 must-block attack blocked with the expected observed layer, every benign control
 passed, and no failures. The documented residual risks are recorded, not counted.
 """

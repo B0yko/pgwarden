@@ -1,4 +1,4 @@
-"""Browserless end-to-end test of the whole OAuth flow (item 2).
+"""Browserless end-to-end test of the whole OAuth flow.
 
 The in-repo mock IdP and the gateway each run in a uvicorn thread; an httpx
 client plays the browser and the MCP client: register (DCR), /oauth/authorize

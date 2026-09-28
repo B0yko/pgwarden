@@ -1,8 +1,7 @@
-"""Integration tests for column masking (item 6), its `apply` idempotency, and
-the doctor masking / writer-subset checks (item 11 / item 7), against the demo
-database and roles.
+"""Integration tests for column masking, its `apply` idempotency, and the
+doctor masking / writer-subset checks, against the demo database and roles.
 
-The key spec point: masking is enforced by generated ``pw_masked`` views plus
+The key design point (ADR-0005): masking is enforced by generated ``pw_masked`` views plus
 ``search_path``, not by post-processing result sets. So a masked person reads
 masked data through the view (even via aliases, expressions or ``row_to_json``,
 because the transformation lives in the view's own SQL), while the base table

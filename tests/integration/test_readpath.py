@@ -1,4 +1,4 @@
-"""Integration tests for the read path (spec item 5) -- the traps, one by one.
+"""Integration tests for the read path -- the traps, one by one.
 
 Every test drives `run_read_query` (or, where the trap needs lower-level
 control than the public function exposes, `PoolManager` directly) against
@@ -170,7 +170,7 @@ async def test_hygiene_matches_fresh_connection_after_each_statement(
 
 
 async def test_with_hold_cursor_does_not_survive_the_rollback_itself(pool_manager) -> None:
-    # Spec: a WITH HOLD cursor needs a COMMIT to survive, and the read path
+    # A WITH HOLD cursor needs a COMMIT to survive, and the read path
     # always ROLLBACKs, so it should already be gone even before the pool's
     # own DISCARD ALL reset runs. Verified directly, without going through
     # the reset step, by inspecting pg_cursors on the *same* connection
@@ -300,7 +300,7 @@ async def test_byte_cap_truncates_rows_within_row_cap(pool_manager) -> None:
 
 
 async def test_oversized_single_row_dropped_and_flagged_residual_risk(pool_manager) -> None:
-    # Documented residual risk (see serialize.py and STATUS.md): a single
+    # Documented residual risk (see serialize.py and docs/threat-model.md): a single
     # row that alone exceeds max_response_bytes cannot be bounded to a
     # partial row; it is dropped entirely and bytes_truncated is set.
     cfg = ReadConfig(row_cap=500, max_response_bytes=1000)

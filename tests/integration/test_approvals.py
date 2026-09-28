@@ -1,4 +1,4 @@
-"""Integration tests for the write path (item 7): validation by Postgres, the
+"""Integration tests for the write path: validation by Postgres, the
 approval lifecycle, at-most-once execution and every refusal in category H.
 
 The service runs in the test's own event loop with a settable clock; the demo

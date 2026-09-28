@@ -3,7 +3,7 @@
 `Connection.execute()` called with no bound arguments uses the simple query
 protocol, which accepts several semicolon-separated statements -- the exact
 bypass a public read-only Postgres MCP server suffered (`COMMIT; <statement>`,
-see the spec). This test greps the source of the two modules that ever touch
+see ADR-0001). This test greps the source of the two modules that ever touch
 a live connection with user-supplied SQL and fails if the user-SQL variable
 (`sql`) is ever passed to `.execute()`/`.fetch()`/`.fetchval()`/`.fetchrow()`
 directly, anywhere but the one allowed `conn.prepare(sql)` call.

@@ -1,6 +1,6 @@
 """Structure of the red-team corpus: the counts and distinctness the release gate needs.
 
-Spec item 1: at least 120 must-block attacks across nine categories, at least 8
+The gate requires at least 120 must-block attacks across nine categories, at least 8
 per category, each a distinct technique (no copies that differ only in a literal),
 and at least 30 benign controls. These checks need no database.
 """

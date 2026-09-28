@@ -1,4 +1,4 @@
-"""Integration tests for the MCP gateway (item 4/5): the FastAPI app, the auth
+"""Integration tests for the MCP gateway: the FastAPI app, the auth
 middleware, the read-path tools, per-identity isolation, audit and Server-Timing.
 
 The app is driven in-process over an ASGI transport with the SDK's own client,

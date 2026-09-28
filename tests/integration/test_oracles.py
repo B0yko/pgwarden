@@ -1,7 +1,7 @@
 """Every red-team oracle type, exercised in a case where the objective IS achieved
 (so the oracle must report ``blocked=False``) and one where it is not (blocked).
 
-The oracles decide from state, not from the error text (spec item 14), so the
+The oracles decide from state, not from the error text, so the
 positive cases here feed them a response or a database state that represents a
 real leak or mutation and assert they catch it.
 """

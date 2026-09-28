@@ -1,4 +1,4 @@
-"""Positive control for the red-team oracles (spec item 14).
+"""Positive control for the red-team oracles.
 
 An oracle that never fires proves nothing. This test replays the SQL-bearing
 must-block cases of categories C, D, E and G over a deliberately unsafe

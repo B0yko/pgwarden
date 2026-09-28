@@ -1,4 +1,4 @@
-"""Integration tests for the authorization-server core (item 2): registration,
+"""Integration tests for the authorization-server core: registration,
 the token endpoint (authorization_code + PKCE, refresh families, client
 credentials), revocation, and what /mcp accepts.
 

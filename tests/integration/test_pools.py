@@ -369,7 +369,7 @@ async def test_aclose_stops_the_reaper_task_cleanly(
 async def test_in_transaction_connection_is_closed_not_reused(
     pg_demo_roles: None, pg_target_dsn: str, pg_role_secret: str
 ) -> None:
-    # Per spec: a connection released while still inside a transaction must
+    # A connection released while still inside a transaction must
     # be closed, never rolled back and put back into circulation (unlike a
     # connection whose reset step merely fails, which is also closed but for
     # a different reason -- see test_failed_reset_closes_connection_instead_of_reusing).

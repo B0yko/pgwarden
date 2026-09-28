@@ -339,7 +339,7 @@ async def test_run_doctor_extension_point_runs_extra_checks(
     assert isinstance(pg_demo_config, Config)
 
     async def custom_check(ctx: DoctorContext) -> CheckResult:
-        return CheckResult("custom", "warn", "from step 3")
+        return CheckResult("custom", "warn", "from an extra check")
 
     report = await run_doctor(
         pg_demo_config,
@@ -350,4 +350,4 @@ async def test_run_doctor_extension_point_runs_extra_checks(
     )
     by_name = {r.check: r for r in report.results}
     assert by_name["custom"].status == "warn"
-    assert by_name["custom"].message == "from step 3"
+    assert by_name["custom"].message == "from an extra check"

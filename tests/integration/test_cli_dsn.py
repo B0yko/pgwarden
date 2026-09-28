@@ -1,4 +1,4 @@
-"""End-to-end coverage of item 0's fix: `PGWARDEN_ADMIN_DSN` carries only
+"""End-to-end coverage of the admin DSN rule: `PGWARDEN_ADMIN_DSN` carries only
 credentials and a host, and `roles sync`/`doctor` swap in the right
 database themselves, through the actual CLI (not just the dsn.py helper).
 """

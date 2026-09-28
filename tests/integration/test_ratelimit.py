@@ -1,4 +1,4 @@
-"""Integration tests for the Postgres-backed fixed-window rate limits (item 9),
+"""Integration tests for the Postgres-backed fixed-window rate limits,
 including the cross-process check: the (N+1)th call is rejected even when the
 calls are spread over two separate gateway connections sharing one state DB.
 """

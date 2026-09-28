@@ -1,7 +1,7 @@
 """Unit tests for pgwarden.db.scram.
 
 The verifier *format* and Postgres's acceptance of it were verified against
-a real Postgres 16 by experiment (see docs/adr/0002 and STATUS.md); these
+a real Postgres 16 by experiment (see docs/adr/0002-login-role-per-person.md); these
 tests cover the pure-Python derivation logic without needing a database.
 """
 

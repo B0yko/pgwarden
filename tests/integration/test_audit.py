@@ -1,5 +1,5 @@
-"""Integration tests for the append-only, hash-chained audit log (item 8) and
-its tamper tests (project check 4).
+"""Integration tests for the append-only, hash-chained audit log and its
+tamper tests.
 
 These run against the shared ``pg_state_dsn``; only this module inserts into
 ``audit_log``, and the one test that deliberately breaks the chain heals it in a

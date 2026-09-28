@@ -1,4 +1,4 @@
-"""Integration tests for the admin UI (item 10) and the approval page (item 7).
+"""Integration tests for the admin UI and the approval page.
 
 A web session is created directly in the state database for a given upstream
 identity (a tests-only shortcut; the login flow itself is covered by the OAuth

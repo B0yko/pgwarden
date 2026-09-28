@@ -267,6 +267,6 @@ def test_serve_refuses_when_the_admin_dsn_is_present(monkeypatch: pytest.MonkeyP
 
 
 def test_json_fixtures_are_minimal() -> None:
-    # Guard for check 8: hand-written fixtures only, no real tenant ids.
+    # The fixtures are hand-written: no real tenant ids.
     assert TENANT.startswith("00000000-")
     assert json.dumps(JWKS)

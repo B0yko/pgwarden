@@ -1,6 +1,6 @@
 """Unit tests for pgwarden.db.dsn (no Postgres needed).
 
-These are the two functions the item-0 fix relies on: `roles sync`,
+These are the two functions the admin DSN rule relies on: `roles sync`,
 `masking apply` and `doctor` build their working DSN as
 `with_dbname(admin_dsn, dbname_from_dsn(target_dsn))`, so PGWARDEN_ADMIN_DSN
 only ever needs credentials and a host.
@@ -41,7 +41,7 @@ def test_with_dbname_then_dbname_from_dsn_round_trips() -> None:
 
 
 def test_one_admin_dsn_serves_both_the_target_and_the_state_database() -> None:
-    # The exact scenario item 0 fixes: PGWARDEN_ADMIN_DSN carries no
+    # The scenario these helpers exist for: PGWARDEN_ADMIN_DSN carries no
     # meaningful database of its own, and each command swaps in the one it
     # actually needs.
     admin_dsn = "postgresql://admin:secret@clusterhost:5432"
