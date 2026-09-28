@@ -1,4 +1,4 @@
-"""The MCP server and its tools (item 4), on streamable HTTP at ``/mcp``.
+"""The MCP server and its tools, on streamable HTTP at ``/mcp``.
 
 Stateless streamable HTTP with JSON responses, so there is no session state to
 hijack and several replicas behave identically. The tools read the verified
@@ -7,11 +7,12 @@ hijack and several replicas behave identically. The tools read the verified
 :mod:`pgwarden.app` put there -- never from a contextvar, which may not cross
 into the SDK's task group.
 
-Tools here are the read and introspection path: ``whoami``, ``list_tables``,
-``describe_table`` and ``query``. The write path (``propose_write`` and friends)
-is added in a later step. Every call is rate-limited where the spec requires and
-audited fail-closed: if the audit insert fails, the tool returns an error and no
-data.
+Read and introspection tools: ``whoami``, ``list_tables``, ``describe_table``
+and ``query``. Write tools: ``propose_write``, ``get_proposal`` and
+``execute_approved_write``; they answer with an error unless the approval
+service is configured. ``query`` calls and proposals are rate-limited per
+identity, and every call is audited fail-closed: if the audit insert fails, the
+tool returns an error and no data.
 """
 
 from __future__ import annotations
@@ -163,7 +164,7 @@ def _client_id(ctx: Context) -> str | None:
 
 
 def build_mcp_server(deps: GatewayDeps) -> MCPServer:
-    """Construct the MCP server and register the read-path tools over ``deps``."""
+    """Construct the MCP server and register its read and write tools over ``deps``."""
     mcp = MCPServer("pgwarden")
 
     @mcp.tool()
@@ -203,7 +204,7 @@ def build_mcp_server(deps: GatewayDeps) -> MCPServer:
 
     @mcp.tool()
     async def describe_table(ctx: Context, name: str) -> dict[str, Any]:
-        """Describe a table/view you can read: columns, types, comments, a row estimate, masking."""
+        """Describe a table/view you can read: columns, types, nullability, comments, masking."""
         p = _principal(ctx)
         schema, dot, table = name.partition(".")
         if not dot:

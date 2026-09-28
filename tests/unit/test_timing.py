@@ -62,9 +62,9 @@ def test_total_ms_is_the_sum_of_every_span() -> None:
 
 def test_record_adds_a_span_without_timing_a_block() -> None:
     timing = Timing()
-    timing.record("pool", 12.5)
+    timing.record("db", 12.5)
     assert len(timing.spans) == 1
-    assert timing.spans[0].name == "pool"
+    assert timing.spans[0].name == "db"
     assert timing.spans[0].duration_ms == 12.5
 
 

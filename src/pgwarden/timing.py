@@ -1,11 +1,11 @@
 """Per-request span timing and the ``Server-Timing`` header it renders as.
 
-Used by the MCP layer (a later step) to time ``auth``, ``ratelimit``,
-``pool``, ``db`` and ``audit`` around a single ``/mcp`` call and expose the
-breakdown both as a response header (``PGWARDEN_SERVER_TIMING=1``) and, for
-clients that cannot see headers, in the tool result's ``_meta``. Kept
-dependency-free and synchronous so it can wrap arbitrary sync or async work
-without importing anything from the web or db layers.
+Used by the MCP layer to time ``auth``, ``ratelimit``, ``db`` and ``audit``
+around a single ``/mcp`` call (taking a connection from the pool is part of the
+``db`` span) and expose the breakdown as a response header
+(``PGWARDEN_SERVER_TIMING=1``). Kept dependency-free and synchronous so it can
+wrap arbitrary sync or async work without importing anything from the web or db
+layers.
 """
 
 from __future__ import annotations
@@ -15,10 +15,10 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-# The only span names the MCP layer is expected to record, per the spec's
-# "Timing" section. Not enforced (a caller may record an unknown name; the
-# renderer does not care), just documented here as the canonical set.
-SPAN_NAMES = ("auth", "ratelimit", "pool", "db", "audit")
+# The span names the MCP layer records. Not enforced (a caller may record an
+# unknown name; the renderer does not care), just documented here as the
+# canonical set.
+SPAN_NAMES = ("auth", "ratelimit", "db", "audit")
 
 
 @dataclass(frozen=True)
