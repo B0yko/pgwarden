@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DOCKER="${DOCKER_BIN:-$HOME/.local/bin/docker}"
+DOCKER="${DOCKER_BIN:-$(command -v docker || echo "$HOME/.local/bin/docker")}"
 
 TERRAFORM_IMAGE="hashicorp/terraform@sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829" # 1.16.4
 TFLINT_IMAGE="ghcr.io/terraform-linters/tflint@sha256:1c595f42d794c32c45a6ea8b58655fd66433d4ca3b1bc631c574a48d120bd19f"   # v0.64.0
