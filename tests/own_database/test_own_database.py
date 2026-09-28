@@ -1,170 +1,204 @@
-"""Follow docs/own-database.md literally against a plain Postgres 16 (item 16).
+"""Follow docs/own-database.md literally against a plain Postgres 16.
 
-A DBA's migration creates a bundle role, a table, RLS keyed on session_user, and a
-masking tag; then pgwarden's own commands run (db init, roles sync, masking apply,
-doctor) and the person queries their data as themselves, seeing only their rows and
-masked PII. This mirrors the documented setup for a user's own database.
+The document's fenced blocks are the test's script (``helpers/own_database.py``): the
+DBA's migration and the admin role run as SQL, the provisioning commands and
+``pgwarden serve`` run as the document's own shell blocks with the real CLI, and the
+check block makes a real MCP round trip over HTTP. The admin is a role created from
+the document's SQL, never a superuser. The superuser DSN in ``OWN_DB_ADMIN_DSN`` (or
+``PGWARDEN_TEST_ADMIN_DSN``) only plays the DBA who runs steps 1 and 3 and cleans up.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import shutil
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 
-import asyncpg
 import pytest
 
-from pgwarden.config import (
-    Config,
-    IdentityRef,
-    MaskingConfig,
-    PersonConfig,
-    UpstreamConfig,
-)
-from pgwarden.db.doctor import run_doctor
-from pgwarden.db.masking import apply_masking
-from pgwarden.db.pools import PoolManager
-from pgwarden.db.provisioning import sync_roles
-from pgwarden.db.readpath import run_read_query
-from pgwarden.db.scram import derive_password
-from pgwarden.state.bootstrap import db_init
+from helpers.own_database import Scenario, scenario
+from pgwarden.redteam.mcp_client import call_tool
+from pgwarden.redteam.stack import StackClient
 
 pytestmark = pytest.mark.pg
 
-ROLE_SECRET = "own-db-test-role-secret"  # noqa: S105 (test fixture)
-APP_PASSWORD = "own-db-test-app-password"  # noqa: S105
+
+def _required(what: str) -> None:
+    if os.environ.get("PGWARDEN_REQUIRE_PG") == "1":
+        pytest.fail(f"{what} is required when PGWARDEN_REQUIRE_PG=1")
+    pytest.skip(f"{what} not available for the own-database test")
 
 
-def _admin_dsn() -> str:
+@pytest.fixture(scope="module")
+def superuser_dsn() -> str:
     dsn = os.environ.get("OWN_DB_ADMIN_DSN") or os.environ.get("PGWARDEN_TEST_ADMIN_DSN")
     if not dsn:
-        if os.environ.get("PGWARDEN_REQUIRE_PG") == "1":
-            pytest.fail("OWN_DB_ADMIN_DSN or PGWARDEN_TEST_ADMIN_DSN is required")
-        pytest.skip("no admin DSN for the own-database test")
+        _required("OWN_DB_ADMIN_DSN (or PGWARDEN_TEST_ADMIN_DSN)")
+    assert dsn is not None
+    for tool in ("bash", "curl", "jq"):  # the document's check block uses them
+        if shutil.which(tool) is None:
+            _required(tool)
     return dsn
 
 
-def _with_db(dsn: str, dbname: str, *, user: str | None = None, password: str | None = None) -> str:
-    from urllib.parse import urlsplit, urlunsplit
+@pytest.fixture
+def run(superuser_dsn: str, tmp_path: Path) -> Iterator[Scenario]:
+    """A fresh database with the document's steps 1 to 3 done (no pgwarden command yet)."""
+    with scenario(superuser_dsn, tmp_path) as sc:
+        sc.create_database()
+        sc.run_migration()
+        sc.create_admin()
+        sc.write_config()
+        yield sc
 
-    p = urlsplit(dsn)
-    host = p.hostname or "127.0.0.1"
-    netloc = f"{user}:{password}@{host}:{p.port or 5432}" if user else p.netloc
-    return urlunsplit((p.scheme, netloc, f"/{dbname}", "sslmode=disable", ""))
+
+def _json_documents(text: str) -> list[dict[str, Any]]:
+    """The JSON values ``jq`` printed one after another."""
+    decoder = json.JSONDecoder()
+    documents: list[dict[str, Any]] = []
+    position = 0
+    while position < len(text):
+        if text[position].isspace():
+            position += 1
+            continue
+        value, position = decoder.raw_decode(text, position)
+        documents.append(value)
+    return documents
 
 
-async def _dba_migration(admin_dsn: str) -> None:
-    """The DBA's own migration: a bundle, a table, RLS on session_user, a masking tag."""
-    conn = await asyncpg.connect(admin_dsn, timeout=10)
-    try:
-        await conn.execute("DROP TABLE IF EXISTS public.reports")
-        await conn.execute("DROP SCHEMA IF EXISTS internal CASCADE")
-        for role in ("readers", "pw_u_rowan"):
-            await conn.execute(
-                f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='{role}') "
-                f"THEN CREATE ROLE {role} NOLOGIN; END IF; END $$"
-            )
-        await conn.execute("ALTER ROLE readers NOLOGIN")
-        await conn.execute(
-            "CREATE SCHEMA internal; "
-            "CREATE TABLE internal.reader_team (login_role text, team text); "
-            "INSERT INTO internal.reader_team VALUES ('pw_u_rowan', 'eu'); "
-            "CREATE FUNCTION internal.my_team() RETURNS text LANGUAGE sql STABLE "
-            "SECURITY DEFINER SET search_path = internal, pg_catalog AS "
-            "$$ SELECT team FROM internal.reader_team WHERE login_role = session_user LIMIT 1 $$"
+def test_the_document_end_to_end(run: Scenario) -> None:
+    # the admin the document creates is an ordinary role, not a superuser
+    assert run.admin_attributes() == {
+        "rolsuper": False,
+        "rolbypassrls": False,
+        "rolcreaterole": True,
+        "rolcreatedb": True,
+    }
+
+    # step 4: provision as that admin (`bash -e`: any failing command fails the block)
+    provisioned = run.provision()
+    assert provisioned.returncode == 0, provisioned.output
+    assert "[PASS] pooler_mode" in provisioned.stdout, provisioned.stdout
+    assert "[PASS] masking_invariant" in provisioned.stdout, provisioned.stdout
+    assert "[PASS] rls_required" in provisioned.stdout, provisioned.stdout
+    assert "[FAIL]" not in provisioned.stdout, provisioned.stdout
+    run.install_oidc_client_secret()
+
+    # running the block again reconciles with no changes (it only skips the once-only key
+    # generation), so the same privileges also cover a rerun
+    rerun = run.provision(without="pgwarden keys generate")
+    assert rerun.returncode == 0, rerun.output
+    assert rerun.stdout.count("no changes") == 2, rerun.stdout  # roles sync, masking apply
+
+    # step 5: serve refuses to start while the admin credential is in its environment ...
+    for variable in ("PGWARDEN_ADMIN_DSN", "PGWARDEN_ADMIN_DSN_FILE"):
+        refused = run.start_serve(before=f"export {variable}=anything\n")
+        assert refused.wait(timeout=60) != 0
+        assert f"{variable} must not be set" in run.serve_log(refused)
+
+    # ... and starts with exactly the variables the document lists.
+    server = run.start_serve()
+    run.wait_ready(server)
+
+    # step 6: the document's own check, over HTTP as a machine identity
+    checked = run.check()
+    assert checked.returncode == 0, checked.output
+    who, rows = _json_documents(checked.stdout)
+    assert who["pg_role"] == f"pw_m_{run.name('reporting_bot')}"
+    assert who["bundles"] == [run.name("analyst")]
+    assert who["masking_applies"] is True
+    # RLS keyed on session_user kept the "us" row out, and the masked view hid the email
+    assert rows["rows_untrusted"] == [{"team": "eu", "owner_email": "a***@example.com"}], rows
+
+    # the base table stays out of reach when the view is bypassed by name
+    async def bypass_attempts() -> tuple[dict[str, Any] | None, list[Any]]:
+        client = StackClient(run.public_url)
+        tokens = await client.machine_token("reporting-bot", run.machine_secret())
+        raw = await call_tool(
+            client.mcp_endpoint,
+            tokens.access_token,
+            "query",
+            {"sql": "SELECT owner_email FROM public.reports"},
         )
-        await conn.execute(
-            "CREATE TABLE public.reports (id int PRIMARY KEY, team text NOT NULL, "
-            "owner_email text NOT NULL, body text NOT NULL); "
-            "INSERT INTO public.reports VALUES "
-            "(1,'eu','anna@example.com','eu report'),(2,'us','ulf@example.com','us report')"
+        count = await call_tool(
+            client.mcp_endpoint,
+            tokens.access_token,
+            "query",
+            {"sql": "SELECT count(*) AS n FROM reports"},
         )
-        await conn.execute("ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY")
-        await conn.execute(
-            "CREATE POLICY team_isolation ON public.reports FOR ALL TO PUBLIC "
-            "USING (team = internal.my_team()) WITH CHECK (team = internal.my_team())"
-        )
-        await conn.execute("GRANT USAGE ON SCHEMA public TO readers")
-        await conn.execute("GRANT SELECT ON public.reports TO readers")
-        await conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-    finally:
-        await conn.close()
+        return raw.tool_error, count.result.get("rows_untrusted", [])
+
+    raw_error, counted = asyncio.run(bypass_attempts())
+    assert raw_error is not None and "permission denied" in json.dumps(raw_error), raw_error
+    assert counted == [{"n": 1}]
 
 
-def _config() -> Config:
-    return Config(
-        public_url="https://pgwarden.example.com",
-        upstream=UpstreamConfig(
-            name="corp", issuer="https://idp.example.com", client_id="pgwarden"
-        ),
-        people=[
-            PersonConfig(
-                identity=IdentityRef(email="rowan@example.com"), role="rowan", bundles=["readers"]
-            )
-        ],
-        masking=MaskingConfig(
-            columns={"public.reports.owner_email": "email"},
-            view_grants={"public.reports": ["readers"]},
-        ),
-        rls_required=["public.reports"],
-    )
+# What each provisioning command has printed by the time the next one runs, so a failure
+# can be pinned on the command the document says needs the privilege.
+_REACHED = {
+    "db init": ("wrote ", "applied migrations"),
+    "roles sync": ("applied migrations", "ran: [pw_"),
+    "masking apply": ("ran: [pw_u_", "[function-schema]"),
+}
+
+# Each privilege the document's step 3 grants, removed on its own: the command that then
+# fails, and the Postgres error it fails with.
+ABLATIONS = [
+    pytest.param(
+        {" CREATEDB": ""}, "db init", "permission denied to create database", id="no-createdb"
+    ),
+    pytest.param(
+        {" CREATEROLE": ""}, "db init", "permission denied to create role", id="no-createrole"
+    ),
+    pytest.param(
+        {"GRANT analyst TO pgwarden_admin WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;\n": ""},
+        "roles sync",
+        "permission denied to grant role",
+        id="no-admin-option-on-the-bundle",
+    ),
+    pytest.param(
+        {"GRANT CREATE ON DATABASE app TO pgwarden_admin;\n": ""},
+        "masking apply",
+        "permission denied for database",
+        id="no-create-on-database",
+    ),
+    pytest.param(
+        {"GRANT pw_masker TO pgwarden_admin WITH INHERIT TRUE, SET TRUE;\n": ""},
+        "masking apply",
+        'must be able to SET ROLE "pw_masker"',
+        id="no-membership-in-pw_masker",
+    ),
+    pytest.param(
+        {"WITH INHERIT TRUE, SET TRUE": "WITH INHERIT FALSE, SET TRUE"},
+        "masking apply",
+        "permission denied for schema pw_fn",
+        id="pw_masker-without-inherit",
+    ),
+    pytest.param(
+        {"GRANT SELECT ON public.reports TO pgwarden_admin WITH GRANT OPTION;\n": ""},
+        "masking apply",
+        "permission denied for table reports",
+        id="no-grant-option-on-the-masked-table",
+    ),
+]
 
 
-async def test_own_database_setup_end_to_end() -> None:
-    admin = _admin_dsn()
-    app_db = "pgw_owndb"
-    # a clean app database
-    root = await asyncpg.connect(admin, timeout=10)
-    try:
-        await root.execute(f"DROP DATABASE IF EXISTS {app_db} WITH (FORCE)")
-        await root.execute("DROP DATABASE IF EXISTS pgw_owndb_state WITH (FORCE)")
-        await root.execute(f"CREATE DATABASE {app_db}")
-    finally:
-        await root.close()
-
-    app_admin_dsn = _with_db(admin, app_db)
-    await _dba_migration(app_admin_dsn)
-
-    # pgwarden's own commands, exactly as documented.
-    state_dsn = _with_db(admin, "pgw_owndb_state", user="own_db_app", password=APP_PASSWORD)
-    await db_init(app_admin_dsn, state_dsn)
-    config = _config()
-    await sync_roles(config, app_admin_dsn, ROLE_SECRET)
-    await apply_masking(config, app_admin_dsn)
-
-    report = await run_doctor(
-        config,
-        admin_dsn=app_admin_dsn,
-        target_dsn=_with_db(admin, app_db),
-        role_secret=ROLE_SECRET,
-        extra_checks=(),
-    )
-    # the masking checks live in db.masking; run the core checks here
-    assert report.ok, [(r.check, r.message) for r in report.results if r.status == "fail"]
-
-    # the person queries as themselves: only their team's rows, PII masked.
-    from urllib.parse import urlsplit
-
-    target = _with_db(admin, app_db)
-    parts = urlsplit(target)
-    role_secret = ROLE_SECRET
-    pm = PoolManager(target_dsn=target, role_secret=role_secret)
-    try:
-        password = derive_password(role_secret, "pw_u_rowan")
-        conn = await asyncpg.connect(
-            host=parts.hostname,
-            port=parts.port or 5432,
-            database=app_db,
-            user="pw_u_rowan",
-            password=password,
-        )
-        try:
-            rows = await conn.fetch("SELECT team, owner_email FROM reports")
-        finally:
-            await conn.close()
-        assert {r["team"] for r in rows} == {"eu"}  # RLS: only rowan's team
-        assert all("***@" in r["owner_email"] for r in rows)  # masking applies
-        # through the read path too
-        result = await run_read_query(pm, "pw_u_rowan", "SELECT owner_email FROM reports", [])
-        assert result.ok and all("***@" in row["owner_email"] for row in result.rows)
-    finally:
-        await pm.aclose()
+@pytest.mark.parametrize(("edits", "command", "error"), ABLATIONS)
+def test_every_listed_admin_privilege_is_needed(
+    superuser_dsn: str, tmp_path: Path, edits: dict[str, str], command: str, error: str
+) -> None:
+    with scenario(superuser_dsn, tmp_path) as sc:
+        sc.create_database()
+        sc.run_migration()
+        sc.create_admin(edits)
+        sc.write_config()
+        provisioned = sc.provision()
+        assert provisioned.returncode != 0, provisioned.output
+        assert error in provisioned.output, provisioned.output
+        ran, not_yet = _REACHED[command]
+        assert ran in provisioned.stdout, f"{command} was not reached:\n{provisioned.output}"
+        assert not_yet not in provisioned.stdout, f"{command} got through:\n{provisioned.output}"
