@@ -411,3 +411,30 @@ async def test_concurrent_queries_never_cross_contaminate(pool_manager) -> None:
         query_as("pw_u_bob", "EU"),
         query_as("pw_u_dana", "US"),
     )
+
+
+async def test_array_results_survive_type_introspection(
+    pg_demo_roles: None, pg_target_dsn: str, pg_role_secret: str
+) -> None:
+    """Regression: an array result type makes asyncpg run a type-introspection query.
+
+    With the statement cache off that query used to go through the unnamed
+    statement and replace the user's statement between Parse and Bind (08P01).
+    User statements are now named, so a first-seen array type works.
+    """
+    from pgwarden.db.pools import PoolManager
+    from pgwarden.db.readpath import run_read_query
+
+    pm = PoolManager(target_dsn=pg_target_dsn, role_secret=pg_role_secret)
+    try:
+        result = await run_read_query(
+            pm,
+            "pw_u_bob",
+            "SELECT array_agg(id) AS ids FROM (SELECT id FROM support_tickets "
+            "ORDER BY created_at LIMIT 5) s",
+            [],
+        )
+        assert result.ok, result.error
+        assert len(result.rows[0]["ids"]) == 5
+    finally:
+        await pm.aclose()

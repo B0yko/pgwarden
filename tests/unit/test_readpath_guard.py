@@ -21,7 +21,7 @@ POOLS = REPO_ROOT / "src" / "pgwarden" / "db" / "pools.py"
 # Any call of one of these methods with `sql` (or `sql,`/`sql)`/`sql ` as the
 # first argument -- i.e. the user-SQL variable passed directly.
 _FORBIDDEN = re.compile(r"\.(execute|fetch|fetchval|fetchrow)\(\s*sql\b")
-_ALLOWED_PREPARE = re.compile(r"\.prepare\(\s*sql\s*\)")
+_ALLOWED_PREPARE = re.compile(r"\.prepare\(\s*sql\s*[,)]")
 
 
 def test_user_sql_never_reaches_execute_or_fetch_directly() -> None:
@@ -60,5 +60,5 @@ def test_write_path_user_sql_only_goes_through_prepare() -> None:
         text = path.read_text(encoding="utf-8")
         assert not _FORBIDDEN.findall(text), f"{path}: user SQL passed to execute/fetch"
         assert not _FORBIDDEN_SUBSCRIPT.findall(text), f"{path}: stored SQL passed to execute/fetch"
-    assert re.search(r"\.prepare\(\s*EXPLAIN_PREFIX \+ sql\s*\)", VALIDATE.read_text("utf-8"))
+    assert re.search(r"\.prepare\(\s*EXPLAIN_PREFIX \+ sql\s*[,)]", VALIDATE.read_text("utf-8"))
     assert _ALLOWED_PREPARE.search(SERVICE.read_text("utf-8"))

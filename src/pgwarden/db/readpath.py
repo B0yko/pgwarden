@@ -61,6 +61,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import secrets
 from typing import Any
 
 import asyncpg
@@ -127,6 +128,18 @@ class ReadResult:
     @property
     def ok(self) -> bool:
         return self.error is None
+
+
+def statement_name() -> str:
+    """A unique name for a user statement's server-side prepared statement.
+
+    User SQL is never prepared as the *unnamed* statement: with the statement
+    cache off, asyncpg also runs its own type-introspection query (for a result
+    type it has not seen yet, such as an array) through the unnamed statement,
+    which would replace the user's statement between Parse and Bind. A named
+    statement is immune; the release-time ``DISCARD ALL`` deallocates it.
+    """
+    return f"pgw_{secrets.token_hex(8)}"
 
 
 def default_application_name(role_name: str) -> str:
@@ -254,7 +267,7 @@ async def _do_steps(
 
     # Extended protocol Parse. Rejects a second statement with 42601;
     # never conn.execute()/fetch() on `sql` (see the module guard).
-    stmt = await conn.prepare(sql)
+    stmt = await conn.prepare(sql, name=statement_name())
 
     param_types = stmt.get_parameters()
     coerced = coerce_params(params, param_types)

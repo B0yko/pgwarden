@@ -30,6 +30,7 @@ from pgwarden.approvals.notifiers import ApprovalNotice, Notifier, notify_all
 from pgwarden.approvals.validate import validate_write
 from pgwarden.config import Config
 from pgwarden.db.params import coerce_params
+from pgwarden.db.readpath import statement_name
 from pgwarden.identity import Principal, UpstreamIdentity, ref_matches
 from pgwarden.mcp_server import GatewayDeps
 from pgwarden.state import audit, ratelimit
@@ -570,7 +571,7 @@ class ApprovalService:
                     )
                     # Extended protocol only: the stored statement is prepared,
                     # never sent through the simple query protocol.
-                    stmt = await conn.prepare(sql)
+                    stmt = await conn.prepare(sql, name=statement_name())
                     await stmt.fetch(*coerce_params(params, stmt.get_parameters()))
                     rows = _rows_from_tag(stmt.get_statusmsg())
                     if rows > max_rows:

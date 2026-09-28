@@ -27,6 +27,7 @@ import asyncpg
 
 from pgwarden.db.params import coerce_params
 from pgwarden.db.pools import PoolManager
+from pgwarden.db.readpath import statement_name
 
 EXPLAIN_PREFIX = "EXPLAIN (FORMAT JSON) "
 _ALLOWED_OPERATIONS = frozenset({"Insert", "Update", "Delete"})
@@ -135,7 +136,7 @@ async def validate_write(
                 )
                 # Extended-protocol Parse of the prefixed user SQL: a second
                 # statement is rejected here with 42601.
-                stmt = await conn.prepare(EXPLAIN_PREFIX + sql)
+                stmt = await conn.prepare(EXPLAIN_PREFIX + sql, name=statement_name())
                 coerced = coerce_params(params, stmt.get_parameters())
                 plan = await stmt.fetchval(*coerced)
             finally:
