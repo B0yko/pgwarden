@@ -1,14 +1,11 @@
 """ADR-0002's experiment, run for real: does the shared-login escalation reproduce?
 
-Writes the observed one-paragraph result to
-``~/Documents/portfolio/_work/pgwarden/adr0002-result.txt`` (outside the
-repo -- ADRs are not written into the repo until a later step) so ADR-0002
-can quote it verbatim.
+The experiment creates and drops its own scratch schema and roles; the test
+writes nothing else. ``ExperimentResult.summary`` is the paragraph ADR-0002
+quotes.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import asyncpg
 import pytest
@@ -17,15 +14,12 @@ from pgwarden.db.shared_login_experiment import run_experiment
 
 pytestmark = pytest.mark.pg
 
-_RESULT_FILE = Path.home() / "Documents" / "portfolio" / "_work" / "pgwarden" / "adr0002-result.txt"
-
 
 async def test_shared_login_escalation_reproduces(pg_shop_dsn: str) -> None:
     result = await run_experiment(pg_shop_dsn)
 
-    # The spec's research predicts this reproduces on Postgres 16 for
-    # dynamic SQL (query_to_xml); assert the observed behaviour either way
-    # (never assume it silently).
+    # Dynamic SQL (query_to_xml) is expected to reproduce on Postgres 16;
+    # assert the observed behaviour either way (never assume it silently).
     assert result.dynamic_sql_escalation_reproduced is True
     assert result.dynamic_sql_leaked_xml is not None
     assert "secret_b" in result.dynamic_sql_leaked_xml
@@ -43,8 +37,7 @@ async def test_shared_login_escalation_reproduces(pg_shop_dsn: str) -> None:
     assert result.session_authorization_blocked is True
     assert result.session_authorization_error is not None
 
-    _RESULT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _RESULT_FILE.write_text(result.summary + "\n", encoding="utf-8")
+    assert result.summary.startswith("Reproduced:")
 
 
 async def test_scratch_objects_cleaned_up_after_experiment(pg_shop_dsn: str) -> None:

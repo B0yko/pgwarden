@@ -4,8 +4,8 @@ pgwarden gives each person their own Postgres login role (``session_user``
 cannot change from SQL) instead of one shared gateway login role that runs
 ``SET ROLE``/``SET SESSION AUTHORIZATION`` per request. This module builds
 the *rejected* shared-login design in a scratch schema and roles, and
-measures whether the escalation the spec predicts actually reproduces, so
-ADR-0002 can quote an observed result instead of an assumption.
+measures whether the escalation that design is expected to allow actually
+reproduces, so ADR-0002 can quote an observed result instead of an assumption.
 
 Design under test: one ``LOGIN`` role (``gw_login``, standing in for a
 shared gateway credential) is granted membership in two otherwise-unrelated
@@ -14,20 +14,19 @@ shared-login gateway would need so ``SET ROLE`` can reach every person's
 role from one connection. ``u_a`` and ``u_b`` each own a table only their
 own role can read.
 
-Result of :func:`run_experiment`, verified by experiment against Postgres 16
-(see ``tests/integration/test_shared_login_experiment.py``) -- and more
-precise than a first pass at this experiment suggested, worth stating
-exactly: after ``SET ROLE u_a``, a single statement --
+Result of :func:`run_experiment`, verified against Postgres 16 (see
+``tests/integration/test_shared_login_experiment.py``), stated exactly: after
+``SET ROLE u_a``, a single statement --
 ``select set_config('role','u_b',true), query_to_xml('select * from tb', ...)``
 -- both changes role to ``u_b`` and reads ``tb`` (owned/granted to ``u_b``
 only) within that one statement, because ``query_to_xml()`` parses and runs
 its SQL-text argument as a fresh, dynamically-planned query *at call time*,
 by which point ``set_config`` (evaluated first in the target list) has
-already switched the effective role. This is exactly the spec's own
-wording: "run dynamic SQL (for example ``query_to_xml(...)``) with the
-other role's privileges." A plain *static* subquery in the same target list
--- ``select set_config('role','u_b',true), (select v from tb limit 1)`` --
-was checked here too and does **not** leak: Postgres checks every range
+already switched the effective role: dynamic SQL (for example
+``query_to_xml(...)``) runs with the other role's privileges. A plain
+*static* subquery in the same target list --
+``select set_config('role','u_b',true), (select v from tb limit 1)`` -- was
+checked too and does **not** leak: Postgres checks every range
 table entry's permissions for the whole plan tree, including embedded
 subqueries, once at executor startup, before any target-list expression
 (including ``set_config``) runs -- so that check still sees the original
