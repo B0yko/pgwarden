@@ -32,7 +32,7 @@ def test_redteam_table_excludes_non_attack_categories() -> None:
     }
     table = render_redteam_table(data)
     assert "A. Stacked statements | 10 | 10" in table
-    assert "benign" not in table.lower().split("controls passed")[0]
+    assert "| benign |" not in table  # the pseudo-category is not a table row
     assert "Benign controls passed: 32 / 32" in table
 
 
