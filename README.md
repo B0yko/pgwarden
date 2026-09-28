@@ -381,6 +381,42 @@ Total spend: $0.0121 of a $5.00 budget. Rows beyond privilege and writes without
 The models used and their prices are verified at run time; the recorded run's full
 JSON is in [docs/results/](docs/results/).
 
+### Setup, versions and infrastructure checks
+
+- **Setup.** On a fresh clone (a distinct compose project, non-default ports, new secrets
+  generated), `docker compose up -d --wait` took 12 s and the whole red-team suite passed
+  there (131 / 131 attacks blocked, 32 / 32 benign controls). From `git clone` to the first
+  `whoami` through the OAuth flow took about 16 s: 1 s clone, 12 s compose, 2 s for the
+  `uv` environment, 1 s for login and the call. That was with the Postgres, Python and
+  Mailpit images, the build layers and the `uv` cache already on the machine; a cold pull
+  and build depends on your network and was not measured.
+- **Image.** The production image runs as a non-root user (uid 10001), contains no mock
+  IdP or test tooling, and is 73.8 MB of compressed content (344 MB unpacked on disk).
+- **Versions.** The full test suite and every recorded run above used Postgres 16.15 and
+  Python 3.12. CI runs the database tests on Postgres 16 and 18 (18 is the newest stable
+  major on 2026-09-28; 19 is still in beta).
+- **Terraform.** `deploy/terraform/check.sh` runs `terraform fmt -check`, `terraform
+  validate` (module and example), `terraform test` (4 runs with mock providers), `tflint`
+  and `trivy config` through pinned Docker images and never authenticates to a cloud:
+  everything passes with 0 findings, after one accepted exception (`AVD-GCP-0017`, a
+  public Cloud SQL address with no authorized networks, reasoned in
+  [deploy/terraform/.trivyignore](deploy/terraform/.trivyignore)). The module is validated
+  and scanned, **not applied in v0.1**.
+
+## Verified clients and identity providers
+
+| MCP client | Status |
+| --- | --- |
+| MCP Inspector 2.8.0 | Verified live: the OAuth flow and tool calls run in headless Chromium against the compose stack (`tests/stack/test_inspector_oauth.py`; the screenshots above come from the same script) |
+| Plain HTTP client | Verified live: the red-team suite and the end-to-end tests drive every endpoint |
+| Claude Code, Cursor | **Not yet verified live.** The landing page prints the connect commands; issue reports from real sessions are welcome |
+| ChatGPT, claude.ai connectors | Expected by design, not verified: they need a public HTTPS URL |
+
+| Identity provider | Status |
+| --- | --- |
+| In-repo mock OIDC provider | Verified live: it runs every test, the red-team suite and the screenshots |
+| Generic OIDC, Google, Microsoft Entra ID, GitHub | Tested only against hand-written, recorded discovery documents and token responses; not verified against a real tenant in v0.1 |
+
 ## Use it on your own database
 
 pgwarden works on the bundled demo data and on your own Postgres 16+ through
