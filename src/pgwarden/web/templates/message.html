@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · pgwarden{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="lead">{{ message }}</p>
+{% if detail %}<p class="muted">{{ detail }}</p>{% endif %}
+{% endblock %}

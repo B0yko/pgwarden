@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Allow access? · pgwarden{% endblock %}
+{% block content %}
+<h1>Connect an assistant to your database?</h1>
+<p class="lead"><strong>{{ client_name }}</strong> wants to query Postgres through pgwarden on your behalf.</p>
+<dl class="facts">
+  <dt>Application</dt><dd>{{ client_name }}</dd>
+  <dt>Sends you back to</dt><dd><code>{{ redirect_host }}</code></dd>
+  <dt>Resource</dt><dd><code>{{ resource }}</code></dd>
+</dl>
+<p>If you continue, you will sign in with <strong>{{ idp_name }}</strong>. The assistant will then act as your own Postgres role: it can read what you can read, and every write needs a human approver.</p>
+<p class="muted">Only continue if you started this connection yourself.</p>
+<div class="actions">
+  <form method="post" action="/oauth/authorize/consent">
+    <input type="hidden" name="pending_id" value="{{ pending_id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="primary" type="submit" name="decision" value="approve">Continue to sign in</button>
+    <button type="submit" name="decision" value="deny">Cancel</button>
+  </form>
+</div>
+{% endblock %}

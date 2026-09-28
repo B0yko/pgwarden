@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}pgwarden{% endblock %}</title>
+  <link rel="stylesheet" href="/static/pgwarden.css">
+</head>
+<body>
+  <header class="bar">
+    <a class="brand" href="/">pgwarden</a>
+    {% block nav %}{% endblock %}
+  </header>
+  <main class="{% block main_class %}narrow{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

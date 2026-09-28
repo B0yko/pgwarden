@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Confirm access · pgwarden{% endblock %}
+{% block content %}
+<h1>Confirm access</h1>
+<p class="lead">You are signed in. <strong>{{ client_name }}</strong> will query the database as you.</p>
+<dl class="facts">
+  <dt>Signed in as</dt><dd>{{ identity }}</dd>
+  <dt>Postgres role</dt><dd><code>{{ pg_role }}</code></dd>
+  <dt>Bundles</dt><dd>{{ bundles }}</dd>
+  <dt>PII masking</dt><dd>{{ "applies" if masked else "raw access" }}</dd>
+  <dt>Application</dt><dd>{{ client_name }} (<code>{{ redirect_host }}</code>)</dd>
+</dl>
+<div class="actions">
+  <form method="post" action="/oauth/authorize/confirm">
+    <input type="hidden" name="pending_id" value="{{ pending_id }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="primary" type="submit" name="decision" value="confirm">Allow</button>
+    <button type="submit" name="decision" value="deny">Deny</button>
+  </form>
+</div>
+{% endblock %}

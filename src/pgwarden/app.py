@@ -306,6 +306,11 @@ def create_app(
 
     for router in routers or []:
         app.include_router(router)
+    from starlette.staticfiles import StaticFiles
+
+    from pgwarden.web.render import STATIC_DIR
+
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.mount("/", mcp_asgi)
     app.add_middleware(
         _PrincipalMiddleware, authenticator=authenticator, server_timing=server_timing
