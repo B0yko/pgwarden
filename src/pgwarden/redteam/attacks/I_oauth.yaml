@@ -6,7 +6,7 @@
 # the runner never holds the gateway's key. The verdicts are the HTTP status and
 # the OAuth error, never the error text.
 #
-# Two attacks named in the spec need the gateway's private key or its clock, so
+# Some attacks need the gateway's private key or its clock, so
 # they stay covered by tests/integration/test_oauth_server.py and
 # test_mcp_gateway.py rather than here: a token with the wrong audience, an
 # expired token, and a refresh chain past its 8-hour lifetime.

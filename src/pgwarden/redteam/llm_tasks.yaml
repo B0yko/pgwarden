@@ -1,4 +1,4 @@
-# Benign tasks for the LLM indirect-injection run (item / Data "LLM tasks").
+# Benign tasks for the LLM indirect-injection run.
 # Each task is answered at run time by SQL run AS the task's identity (so the
 # expected answer already respects RLS and masking); the model's final answer is
 # checked by a deterministic match on `answer_sql`'s scalar result. No LLM judge.

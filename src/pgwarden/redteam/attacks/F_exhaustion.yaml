@@ -4,11 +4,11 @@
 # lock_timeout (1s), row_cap (500, enforced by stopping the portal fetch
 # rather than by inspecting the query), max_response_bytes (1 MiB, enforced
 # during serialization), the per-person pool's small size and global cap
-# (spec item 3), and the fixed connection-release reset the read path runs
-# on every release (spec item 5's hygiene traps). F08 exists specifically
+# (ADR-0004), and the fixed connection-release reset the read path runs
+# on every release (its hygiene traps). F08 exists specifically
 # because pg_advisory_lock is session-level and non-transactional by design
 # -- ROLLBACK alone does not release it, so pgwarden's own reset has to.
-# F09 is a flood case: per the evaluation section, it only runs with
+# F09 is a flood case: it only runs with
 # `redteam run --allow-load`, and a rate_limited audit outcome counts as
 # "blocked" for this case only (anywhere else in the corpus it would
 # invalidate the run).
@@ -44,7 +44,7 @@
     - type: completes_within
       ms: 6000
     - type: gateway_healthy_after
-  note: "STATUS.md already records that statement_timeout cannot be disarmed mid-statement against a real Postgres 16 (verified during step 1 research); this case is the regression test for that finding."
+  note: "statement_timeout cannot be disarmed mid-statement on a real Postgres 16 (verified by experiment); this case is the regression test for that finding."
 
 - id: F03
   category: F
@@ -122,7 +122,7 @@
     - type: completes_within
       ms: 10000
     - type: gateway_healthy_after
-  note: "the response must still be capped/rejected at serialization; if the gateway cannot bound memory for this one oversized row before the byte cap can apply, that is the one memory-related item the evaluation section allows as a residual risk, reported with its measured peak RSS rather than silently passed. The technique differs from F06 (which asks one repeat() call for more than Postgres allows): here every input is small and the oversized value comes from aggregation."
+  note: "the response must still be capped/rejected at serialization; if the gateway cannot bound memory for this one oversized row before the byte cap can apply, that is the one memory-related item accepted as a documented residual risk, reported with its measured peak RSS rather than silently passed. The technique differs from F06 (which asks one repeat() call for more than Postgres allows): here every input is small and the oversized value comes from aggregation."
 
 - id: F08
   category: F
@@ -137,7 +137,7 @@
   oracles:
     - type: lock_released
       key: 424242
-  note: "this is the exact 'traps to design against' case from spec item 5: the released pooled connection's fixed reset must release session-level advisory locks (e.g. via pg_advisory_unlock_all() or an equivalent DISCARD), or a later caller reusing that connection, or a different identity trying the same key, is blocked by a lock this identity's own already-rolled-back call took."
+  note: "this is the connection-hygiene trap the read path's reset exists for: the released pooled connection's fixed reset must release session-level advisory locks (e.g. via pg_advisory_unlock_all() or an equivalent DISCARD), or a later caller reusing that connection, or a different identity trying the same key, is blocked by a lock this identity's own already-rolled-back call took."
 
 - id: F09
   category: F
@@ -153,7 +153,7 @@
     - type: gateway_healthy_after
     - type: completes_within
       ms: 2000
-  note: "flood-only case: runs solely under `redteam run --allow-load` per the evaluation section. A rate_limited audit outcome for calls past the 60th counts as blocked here only; this case is a single representative statement repeated by the runner, not the statement text itself that matters."
+  note: "flood-only case: runs solely under `redteam run --allow-load`. A rate_limited audit outcome for calls past the 60th counts as blocked here only; this case is a single representative statement repeated by the runner, not the statement text itself that matters."
 
 - id: F10
   category: F

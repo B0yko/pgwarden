@@ -1,6 +1,6 @@
--- pgwarden state database: the migration-tracking table plus a minimal,
--- sure-to-be-needed table set. Later steps add their own migrations (audit,
--- tokens, proposals, rate limits, ...) as further numbered files here.
+-- pgwarden state database: the migration-tracking table plus the base tables
+-- (identity bindings, suspension state, ...). Audit, tokens, proposals, rate
+-- limits and the rest live in the later numbered files here.
 --
 -- No transaction-control statements: pgwarden.state.migrate wraps this
 -- whole file in one transaction, along with the row that records it as
@@ -16,7 +16,7 @@ CREATE TABLE pgwarden.schema_migrations (
 -- Maps an upstream immutable identity to the config role it is bound to. On
 -- the first match pgwarden records the id; a later login asserting the same
 -- email with a different id for that person is refused (see the upstream
--- login and identity-binding logic added in a later step).
+-- login and identity-binding logic in pgwarden.oauth.binding).
 CREATE TABLE pgwarden.identity_bindings (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     provider text NOT NULL,
@@ -28,8 +28,8 @@ CREATE TABLE pgwarden.identity_bindings (
 );
 
 -- Suspension state per configured person. No row means "not suspended".
--- `pgwarden people suspend|unsuspend` writes it; the auth middleware added
--- in a later step reads it on every token verification.
+-- `pgwarden people suspend|unsuspend` writes it; the auth middleware reads it
+-- on every token verification.
 CREATE TABLE pgwarden.people_status (
     person_role text PRIMARY KEY,
     suspended boolean NOT NULL DEFAULT false,

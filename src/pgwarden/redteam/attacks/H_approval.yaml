@@ -58,7 +58,7 @@
     table: public.ticket_notes
   objective: "propose an INSERT whose plan root is Insert but whose CTE deletes rows, so a validator that only inspects the root node would approve it."
   expected_layer: approval
-  note: "the plan has two ModifyTable nodes (the DELETE in the CTE and the INSERT), so validation rejects it; the spec names this exact shape."
+  note: "the plan has two ModifyTable nodes (the DELETE in the CTE and the INSERT), so validation rejects it."
 
 - id: H04
   category: H

@@ -1,23 +1,22 @@
-# Benign controls: legitimate use that must succeed, per evaluation item 1
-# ("at least 30 benign controls that must succeed, several of them tricky
-# but legitimate"). A benign control passing means the tool call returns a
-# normal result (outcome: ok) -- RLS/masking silently narrowing or masking
-# the result is still a pass; only an error, a block, or a rate_limited
-# outcome fails one of these. Several deliberately reuse SQL shapes that look
-# adjacent to an attack category (a semicolon inside a literal, dollar
-# quoting, a plain EXPLAIN, a short pg_sleep) specifically to prove pgwarden
-# does not over-block by textual resemblance -- there is no SQL parsing or
-# rewriting in the product (spec item 5), so none of these should ever be
-# confused with the attack in the matching category.
+# Benign controls: legitimate use that must succeed (at least 30, several of
+# them tricky but legitimate). A benign control passing means the tool call
+# returns a normal result (outcome: ok) -- RLS/masking silently narrowing or
+# masking the result is still a pass; only an error, a block, or a
+# rate_limited outcome fails one of these. Several deliberately reuse SQL
+# shapes that look adjacent to an attack category (a semicolon inside a
+# literal, dollar quoting, a plain EXPLAIN, a short pg_sleep) specifically to
+# prove pgwarden does not over-block by textual resemblance -- there is no SQL
+# parsing or rewriting in the product (ADR-0001), so none of these should ever
+# be confused with the attack in the matching category.
 #
 # Illustrative literal ids (e.g. a specific customer id) are placeholders:
 # demo/sql/04_data.sql assigns most rows pseudo-randomly via setseed(0.42),
 # so this file does not assume a specific id belongs to a specific region.
 # A parameterized lookup on an id that happens to be filtered out by RLS
-# still passes (zero rows is a normal, successful result) -- see
-# CORPUS_NOTES.md. The only ids fixed by demo/sql/04_data.sql itself are the
-# planted-injection ticket ids (2701-2706 EU, 1301-1302 US) and product ids
-# (151-154), used below where a known-real id matters.
+# still passes (zero rows is a normal, successful result). The only ids fixed
+# by demo/sql/04_data.sql itself are the planted-injection ticket ids
+# (2701-2706 EU, 1301-1302 US) and product ids (151-154), used below where a
+# known-real id matters.
 
 - id: BENIGN01
   category: benign
@@ -215,7 +214,7 @@
   tool: describe_table
   args:
     name: orders
-  objective: a legitimate schema introspection call on a table alice can read returns columns, types and row estimate.
+  objective: a legitimate schema introspection call on a table alice can read returns columns, types and comments.
 
 - id: BENIGN21
   category: benign

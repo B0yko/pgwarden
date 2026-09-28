@@ -1,4 +1,4 @@
-# Committed query shapes for the latency benchmark (item 4). Parameters are bound.
+# Committed query shapes for the latency benchmark. Parameters are bound.
 - name: pk_lookup
   label: primary-key lookup
   sql: "SELECT id, region, status FROM orders WHERE id = $1"

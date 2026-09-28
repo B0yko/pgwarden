@@ -1,13 +1,13 @@
 # Category E: bypassing masking.
 #
-# Masking is enforced by generated views in schema pw_masked (spec item 6),
+# Masking is enforced by generated views in schema pw_masked (ADR-0005),
 # reached only through search_path routing for people without a raw-access
 # bundle. alice (analyst bundle, no writer) is the only demo identity that is
 # actually masked: her search_path puts pw_masked first, so unqualified
 # `customers` resolves to pw_masked.customers, a security_barrier view whose
 # full_name/email/phone columns are already wrapped in pw_fn.mask_* before
 # any expression, alias, or serialization function ever sees them. There is
-# no post-processing of result sets (spec item 6's own warning), so every
+# no post-processing of result sets (see ADR-0005), so every
 # case here is really testing that the VIEW is what actually gets queried,
 # not that pgwarden inspects column names in the output. E05 (pg_stats on the
 # base table's email column) is blocked by grants: the masked identity has no
@@ -74,7 +74,7 @@
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: alice
-  note: "spec item 6 states this must be a plain permission error, not a masked or filtered result: alice's bundle is never granted SELECT on the base public.customers table at all, only on the pw_masked.customers view."
+  note: "this must be a plain permission error, not a masked or filtered result: alice's bundle is never granted SELECT on the base public.customers table at all, only on the pw_masked.customers view."
 
 - id: E05
   category: E

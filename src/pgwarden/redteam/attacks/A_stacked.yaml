@@ -3,18 +3,18 @@
 # Every case sends more than one SQL statement through the `query` tool's
 # single prepared-statement Parse step. The read path prepares user SQL
 # through the extended protocol and rejects more than one statement at
-# Parse time (spec item 5, step 4) -- so every case here expects
+# Parse time -- so every case here expects
 # expected_layer: protocol, typically SQLSTATE 42601 (syntax_error) or a
 # driver-level "cannot insert multiple commands into a prepared statement"
 # raised before the statement ever runs. The oracle on each case additionally
 # confirms the attacker's real goal (read a canary, escalate a role, or
 # mutate a table) was not achieved, in case the protocol layer is ever
-# weakened -- the oracle must not just trust the error, per spec item 14
-# ("decides from state, not from the error text").
+# weakened -- the oracle must not just trust the error (oracles decide from
+# state, not from the error text).
 #
-# A01/A02 reproduce the public write-ups named in the spec's Problem section
-# (Datadog Security Labs' `COMMIT; <statement>` escape of a reference
-# read-only Postgres MCP server, and its ROLLBACK sibling). A05-A09 vary how
+# A01/A02 reproduce the public write-up (Datadog Security Labs' `COMMIT;
+# <statement>` escape of a reference read-only Postgres MCP server, and its
+# ROLLBACK variant; see ADR-0001). A05-A09 vary how
 # the statement separator is textually hidden, so a naive regex/keyword
 # blocklist (see bench/baselines) would need to notice each escaping form
 # even though pgwarden's Parse-based defense does not care about any of them.

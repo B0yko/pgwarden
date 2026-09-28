@@ -1,5 +1,5 @@
 -- Fixed-window rate limits, stored in the state database so they hold across
--- replicas (item 9). One row per (scope, subject, window_start); the window is
+-- replicas. One row per (scope, subject, window_start); the window is
 -- a fixed clock-aligned bucket and the count is bumped with a single
 -- INSERT ... ON CONFLICT DO UPDATE ... RETURNING, which is atomic across
 -- concurrent gateway processes sharing this database.
@@ -17,7 +17,7 @@ CREATE TABLE pgwarden.rate_windows (
 );
 
 COMMENT ON TABLE pgwarden.rate_windows IS
-    'Fixed-window rate-limit counters (item 9), shared across replicas.';
+    'Fixed-window rate-limit counters, shared across replicas.';
 
 -- An index to make pruning old windows cheap (a periodic DELETE by window_start).
 CREATE INDEX rate_windows_window_start_idx ON pgwarden.rate_windows (window_start);

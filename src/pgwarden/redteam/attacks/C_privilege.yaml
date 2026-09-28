@@ -8,7 +8,7 @@
 # INHERIT TRUE, SET FALSE (already active, cannot be "switched to") and a
 # writer role WITH INHERIT FALSE, SET TRUE (must be explicitly switched to,
 # and only unlocks that writer role's own narrow grants). C10 is the
-# invariant case spec item 7 explicitly asks for: a writer-role switch must
+# invariant case for the writer role: a writer-role switch must
 # not unlock masked or hidden columns, because a writer role's SELECT
 # privileges must stay a subset of its bundle's.
 
@@ -68,7 +68,7 @@
   oracles:
     - type: response_excludes_canaries
       canaries: ["CANARY-PM-"]
-  note: "this is the mechanism ADR-0002 names as the reason a shared login role with SET ROLE would be unsafe (set_config('role', ...) then query_to_xml(...) in one statement); here it is tested on bob's own unescalated login role to prove privilege checks apply to a function's internal query the same as to a direct one. STATUS.md already records that this composite escalation reproduces against the shared-login design the ADR rejected."
+  note: "this is the mechanism ADR-0002 names as the reason a shared login role with SET ROLE would be unsafe (set_config('role', ...) then query_to_xml(...) in one statement); here it is tested on bob's own unescalated login role to prove privilege checks apply to a function's internal query the same as to a direct one. the same composite escalation does reproduce against the shared-login design the ADR rejected (tests/integration/test_shared_login_experiment.py)."
 
 - id: C05
   category: C
@@ -156,7 +156,7 @@
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: bob
-  note: "OBSERVED on the live stack: the statement is not refused. The switch to support_writer inside a FROM subquery only takes effect after the executor has checked privileges as bob (ADR-0002), so it unlocks nothing; bob simply reads customers he is entitled to, and RLS keyed on session_user still limits every returned row to his own region. The oracle scans the whole response for raw PII of any other region. The layer that bounds the read is therefore rls, not privileges (the spec invariant is that a writer-role switch must not widen what is readable). The writer role's own grants cover only support_tickets(id, region) and UPDATE(status), ticket_notes INSERT and refunds INSERT, nothing on customers."
+  note: "OBSERVED on the live stack: the statement is not refused. The switch to support_writer inside a FROM subquery only takes effect after the executor has checked privileges as bob (ADR-0002), so it unlocks nothing; bob simply reads customers he is entitled to, and RLS keyed on session_user still limits every returned row to his own region. The oracle scans the whole response for raw PII of any other region. The layer that bounds the read is therefore rls, not privileges (the invariant is that a writer-role switch must not widen what is readable). The writer role's own grants cover only support_tickets(id, region) and UPDATE(status), ticket_notes INSERT and refunds INSERT, nothing on customers."
 
 - id: C11
   category: C

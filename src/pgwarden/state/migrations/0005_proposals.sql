@@ -1,4 +1,4 @@
--- The write-approval queue (item 7).
+-- The write-approval queue.
 --
 -- A proposal moves pending -> approved | rejected | expired; approved ->
 -- executing | expired; executing -> executed | failed. Every transition is a
@@ -50,7 +50,7 @@ CREATE TABLE pgwarden.proposals (
 );
 
 COMMENT ON TABLE pgwarden.proposals IS
-    'Write proposals awaiting, or past, human approval (item 7).';
+    'Write proposals awaiting, or past, human approval.';
 
 CREATE INDEX proposals_state_idx ON pgwarden.proposals (state, expires_at);
 CREATE INDEX proposals_proposer_idx ON pgwarden.proposals (proposer_subject, created_at);

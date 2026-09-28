@@ -1,5 +1,5 @@
--- OAuth 2.1 authorization-server core (step 6): registered clients, the
--- pending-authorization staging table step 7's /oauth/authorize will drive,
+-- OAuth 2.1 authorization-server core: registered clients, the
+-- pending-authorization staging table that /oauth/authorize drives,
 -- single-use authorization codes, refresh-token families and their tokens,
 -- and a small table of revoked access-token jtis.
 --
@@ -29,12 +29,12 @@ CREATE TABLE pgwarden.oauth_clients (
 COMMENT ON TABLE pgwarden.oauth_clients IS
     'Registered/cached OAuth clients (RFC 7591 dynamic registration or a cached CIMD document).';
 
--- One row per in-flight /oauth/authorize request (step 7): the pre-login
--- consent step, then the upstream OIDC leg, then the post-login confirmation
--- step, all keyed by this row's random id. Designed so step 7 can drive its
--- whole state machine off this one table: `stage` names where the request
--- currently is (for example 'consent_pending' -> 'upstream_pending' ->
--- 'confirm_pending' -> 'completed'); the identity_* columns are filled in
+-- One row per in-flight /oauth/authorize request: the pre-login consent step,
+-- then the upstream OIDC leg, then the post-login confirmation step, all keyed
+-- by this row's random id. The whole state machine is driven off this one
+-- table: `stage` names where the request currently is (for example
+-- 'consent_pending' -> 'upstream_pending' -> 'confirm_pending' ->
+-- 'completed'); the identity_* columns are filled in
 -- once the upstream callback returns; `browser_binding_hash` ties the row to
 -- the browser's __Host- cookie so a stolen `id` alone is not enough to drive
 -- someone else's pending request; `upstream_state_hash`/`upstream_nonce`/
@@ -63,7 +63,7 @@ CREATE TABLE pgwarden.pending_authorizations (
 );
 
 COMMENT ON TABLE pgwarden.pending_authorizations IS
-    'In-flight /oauth/authorize requests: consent, upstream login, confirmation (step 7).';
+    'In-flight /oauth/authorize requests: consent, upstream login, confirmation.';
 
 CREATE INDEX pending_authorizations_expires_at_idx
     ON pgwarden.pending_authorizations (expires_at);
@@ -71,9 +71,9 @@ CREATE INDEX pending_authorizations_expires_at_idx
 -- Single-use authorization codes (60s TTL). `code_hash` is sha256(code) hex;
 -- the plaintext code is only ever handed to the client in the redirect and
 -- never stored. `upstream_login_at` is when the person actually signed in
--- upstream (step 7 sets it); the token endpoint uses it, unchanged by later
--- refreshes, as the start of the refresh-token family's 8h absolute
--- lifetime (item 2: rotation never extends it).
+-- upstream (recorded when the code is issued); the token endpoint uses it,
+-- unchanged by later refreshes, as the start of the refresh-token family's 8h
+-- absolute lifetime (rotation never extends it).
 CREATE TABLE pgwarden.auth_codes (
     code_hash text PRIMARY KEY,
     client_id text NOT NULL,

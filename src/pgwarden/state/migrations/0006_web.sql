@@ -1,4 +1,4 @@
--- Browser-facing state (step 7): the gateway's own login sessions for /admin and
+-- Browser-facing state: the gateway's own login sessions for /admin and
 -- /approve, the email-to-immutable-id bindings, and the purpose of a pending
 -- upstream login.
 

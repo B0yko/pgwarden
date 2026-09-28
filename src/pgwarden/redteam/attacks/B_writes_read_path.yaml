@@ -2,7 +2,7 @@
 # the approval queue entirely. Every case here submits exactly one statement
 # (so it clears the category-A protocol check) and instead relies on the
 # read path's `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` transaction
-# (spec item 5, step 2) to refuse the write. Postgres's own read-only-
+# to refuse the write. Postgres's own read-only-
 # transaction enforcement disallows INSERT/UPDATE/DELETE/COPY FROM against
 # non-temporary tables, all CREATE/ALTER/DROP commands, COMMENT, GRANT,
 # REVOKE, TRUNCATE, and EXPLAIN ANALYZE/EXECUTE of any of those -- so most
@@ -12,7 +12,7 @@
 # by that enforcement, so they are included specifically because Postgres
 # itself will not stop them, and pgwarden has to rely on a different layer
 # (role privilege, or the "characteristics cannot change after the first
-# query" rule the read path's own step-3 set_config call triggers for free).
+# query" rule the read path's own set_config call triggers for free).
 # One case (B13) uses the `propose_write` tool instead of `query`, to check
 # that the approval path's own EXPLAIN-based validation independently
 # rejects a write-shaped statement, as defense in depth alongside the
@@ -92,7 +92,7 @@
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: null
-  note: "COPY is not expressible through PREPARE/the extended query protocol asyncpg's Connection.prepare() uses (verify in the asyncpg docs per spec item 5); expect this to fail before Postgres's read-only check is even reached, so classify it under protocol rather than read_only_transaction unless the build step's research shows otherwise."
+  note: "COPY is not expressible through PREPARE/the extended query protocol asyncpg's Connection.prepare() uses, so it is refused before Postgres's read-only check is even reached; the recorded runs classify the refusal under privileges rather than read_only_transaction."
 
 - id: B06
   category: B
@@ -183,7 +183,7 @@
   sqlstate: "25001"
   oracles:
     - type: role_unchanged
-  note: "transaction characteristics (isolation level, read/write mode) cannot be changed once a query has run in the transaction (Postgres docs, SET TRANSACTION); the read path's own step 3 set_config call is itself a query, so by the time this statement runs one has already executed. Each `query` call is its own fresh BEGIN..ROLLBACK, so even a silent success here could not reach a second statement in the same call -- the case still needs to prove the attempt itself is rejected, since a future refactor could change that assumption."
+  note: "transaction characteristics (isolation level, read/write mode) cannot be changed once a query has run in the transaction (Postgres docs, SET TRANSACTION); the read path's own set_config call is itself a query, so by the time this statement runs one has already executed. Each `query` call is its own fresh BEGIN..ROLLBACK, so even a silent success here could not reach a second statement in the same call -- the case still needs to prove the attempt itself is rejected, since a future refactor could change that assumption."
 
 - id: B12
   category: B
@@ -198,7 +198,7 @@
   sqlstate: "25001"
   oracles:
     - type: role_unchanged
-  note: same caveat as B11 about the single-statement-per-call constraint; kept as a separate case because it is a different code path (GUC assignment vs. SET TRANSACTION syntax) and STATUS.md already records that the analogous statement_timeout disarm attempt does not work mid-statement.
+  note: same caveat as B11 about the single-statement-per-call constraint; kept as a separate case because it is a different code path (GUC assignment vs. SET TRANSACTION syntax) and the analogous statement_timeout disarm attempt (F02) does not work mid-statement either.
 
 - id: B13
   category: B
@@ -225,7 +225,7 @@
     params: []
     reason: "defense-in-depth probe: a non-ModifyTable statement submitted as a write proposal"
     max_rows: 500
-  objective: check that the approval path's own EXPLAIN-based validation (spec item 7) independently rejects a statement whose plan has no ModifyTable node, as a second line of defense alongside the read path's read-only transaction, in case a write-shaped payload reaches propose_write instead of query.
+  objective: check that the approval path's own EXPLAIN-based validation independently rejects a statement whose plan has no ModifyTable node, as a second line of defense alongside the read path's read-only transaction, in case a write-shaped payload reaches propose_write instead of query.
   expected_layer: approval
   oracles:
     - type: proposal_state

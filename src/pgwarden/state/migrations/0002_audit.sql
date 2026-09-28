@@ -1,4 +1,4 @@
--- Append-only, tamper-evident audit log (item 8).
+-- Append-only, tamper-evident audit log.
 --
 -- The table, its trigger functions and its triggers are owned by whoever runs
 -- migrations (the admin/migration role), never by pgwarden_app. db init grants
@@ -49,7 +49,7 @@ CREATE TABLE pgwarden.audit_log (
 );
 
 COMMENT ON TABLE pgwarden.audit_log IS
-    'Append-only, hash-chained audit log (item 8). INSERT/SELECT only for pgwarden_app.';
+    'Append-only, hash-chained audit log. INSERT/SELECT only for pgwarden_app.';
 
 -- One field's fixed 32-byte contribution to the row hash. NULL maps to a fixed
 -- sentinel digest so a NULL and the empty string are distinguishable, and no

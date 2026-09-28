@@ -3,13 +3,13 @@
 # billing.payment_methods is granted to no bundle at all (demo/sql/01_schema.sql,
 # 02_bundles.sql), so every identity here should be denied at the ordinary
 # table-privilege layer regardless of tool or approach. Its tokens follow the
-# fixed pattern `CANARY-PM-####` (spec, Data section), which is what every
+# fixed pattern `CANARY-PM-####` (see demo/sql/04_data.sql), which is what every
 # oracle here scans for, over the whole response including error message,
-# DETAIL and HINT (spec item 14's definition of response_excludes_canaries).
+# DETAIL and HINT (the definition of response_excludes_canaries).
 # G09 targets table-NAME (not data) disclosure through pg_class, which
 # PostgreSQL does not gate by privilege the way it gates row/column content;
-# see CORPUS_NOTES.md for why this is flagged as an open question rather
-# than silently resolved either way.
+# it is recorded as a documented residual risk (must_block: false), not
+# counted against the gate.
 
 - id: G01
   category: G
@@ -97,7 +97,7 @@
   oracles:
     - type: response_excludes_canaries
       canaries: ["CANARY-PM-"]
-  note: "doctor's own checks (spec item 11) require that no dblink or postgres_fdw function is executable by person or machine roles; this case exercises the same invariant end to end."
+  note: "doctor's own checks require that no dblink or postgres_fdw function is executable by person or machine roles; this case exercises the same invariant end to end."
 
 - id: G07
   category: G
