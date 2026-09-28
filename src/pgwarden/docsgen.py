@@ -212,6 +212,208 @@ def render_baselines_table(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+_SPAN_ORDER = ("auth", "ratelimit", "pool", "db", "audit")
+LATENCY_TARGET_MS = 10.0
+LOAD_P95_TARGET_MS = 150.0
+
+
+def _ms(value: float) -> str:
+    """Milliseconds with two decimals under 10 ms and one above."""
+    return f"{value:.2f}" if value < 10 else f"{value:.1f}"
+
+
+def _pair(a: float, b: float) -> str:
+    return f"{_ms(a)} / {_ms(b)}"
+
+
+def _range_pair(spread: dict[str, Any] | None, p50: str, p95: str) -> str:
+    """The min-max of the repetitions' p50 and p95, as a second line in a table cell."""
+    if not spread or p50 not in spread or p95 not in spread:
+        return ""
+    lo50, hi50 = spread[p50]
+    lo95, hi95 = spread[p95]
+    return f"<br><sub>{_ms(lo50)}-{_ms(hi50)} / {_ms(lo95)}-{_ms(hi95)}</sub>"
+
+
+def _run_line(data: dict[str, Any]) -> str:
+    parts = [f"{data.get('date')}", f"commit `{data.get('git_commit')}`"]
+    if data.get("postgres_version"):
+        parts.append(f"Postgres {str(data['postgres_version']).split(' ')[0]}")
+    if data.get("hardware"):
+        parts.append(str(data["hardware"]))
+    if data.get("config_file"):
+        parts.append(f"config `{data['config_file']}` (sha256 {data.get('config_hash')})")
+    other = data.get("other_containers")
+    if other is not None:
+        noun = "container" if other == 1 else "containers"
+        parts.append(f"{other} other {noun} running on the machine during the run")
+    return "Run: " + "; ".join(parts) + "."
+
+
+def _audit_line(data: dict[str, Any], when: str) -> str:
+    audit = data.get("audit_verify")
+    if not audit:
+        return ""
+    if audit.get("ok"):
+        return f"Audit chain verified {when}: OK, {audit.get('detail')}."
+    return f"Audit chain verified {when}: FAILED, {audit.get('detail')}."
+
+
+def render_latency_table(data: dict[str, Any]) -> str:
+    """The latency table, the Server-Timing medians, the cold first-query cost and the target."""
+    reps = data.get("repetitions", 1)
+    lines = [
+        "| Query | Direct p50 / p95 | Direct + wrapper p50 / p95 | Via pgwarden p50 / p95 "
+        "| Overhead p50 / p95 (ms) |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for q in data["queries"]:
+        sp = q.get("spread")
+        cells = [
+            _pair(q["direct_p50"], q["direct_p95"]) + _range_pair(sp, "direct_p50", "direct_p95"),
+            _pair(q["wrapper_p50"], q["wrapper_p95"])
+            + _range_pair(sp, "wrapper_p50", "wrapper_p95"),
+            _pair(q["gateway_p50"], q["gateway_p95"])
+            + _range_pair(sp, "gateway_p50", "gateway_p95"),
+            _pair(q["overhead_p50"], q["overhead_p95"])
+            + _range_pair(sp, "overhead_p50", "overhead_p95"),
+        ]
+        lines.append(f"| {q['query']} | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        f"Milliseconds, median of {reps} repetitions of {data['iterations']} timed calls "
+        f"after {data['warmup']} warm-up calls each; the small line under a cell is the min-max "
+        "of the repetitions' p50 / p95. Overhead is via pgwarden minus direct.",
+    ]
+
+    spans = sorted(
+        {name for q in data["queries"] for name in q.get("server_timing_median", {})},
+        key=lambda n: (_SPAN_ORDER.index(n) if n in _SPAN_ORDER else len(_SPAN_ORDER), n),
+    )
+    if spans:
+        lines += [
+            "",
+            "`Server-Timing` span medians inside the gateway (ms):",
+            "",
+            "| Query | " + " | ".join(spans) + " |",
+            "| --- |" + " ---: |" * len(spans),
+        ]
+        for q in data["queries"]:
+            med = q.get("server_timing_median", {})
+            cells = [_ms(med[n]) if n in med else "-" for n in spans]
+            lines.append(f"| {q['query']} | " + " | ".join(cells) + " |")
+
+    lines += ["", _cold_line(data.get("cold_start"))]
+
+    first = data["queries"][0]
+    overhead = first["overhead_p50"]
+    if overhead <= LATENCY_TARGET_MS:
+        verdict = (
+            f"Design target (overhead p50 <= {LATENCY_TARGET_MS:g} ms on the {first['query']}): "
+            f"met, {_ms(overhead)} ms."
+        )
+    else:
+        med = first.get("server_timing_median", {})
+        dominant = max(med, key=lambda n: med[n]) if med else None
+        tail = (
+            f" The largest `Server-Timing` span is `{dominant}` ({_ms(med[dominant])} ms)."
+            if dominant
+            else ""
+        )
+        verdict = (
+            f"Design target (overhead p50 <= {LATENCY_TARGET_MS:g} ms on the {first['query']}): "
+            f"missed, {_ms(overhead)} ms.{tail}"
+        )
+    lines += ["", verdict, "", _run_line(data)]
+    audit = _audit_line(data, "after the latency run")
+    if audit:
+        lines.append(audit)
+    return "\n".join(lines)
+
+
+def _cold_line(cold: dict[str, Any] | None) -> str:
+    if not cold:
+        return "Cold first-query cost: not measured in this run."
+    if not cold.get("measured"):
+        return f"Cold first-query cost: not measured. {cold.get('reason', '')}".rstrip()
+    first = cold["cold_first_query_ms"]
+    warm = cold["warm_query_ms"]
+    return (
+        "Cold first query after the pooled connection was evicted (connect + SCRAM; "
+        "primary-key lookup, gateway with "
+        f"`pool.idle_timeout_s: {cold.get('pool_idle_timeout_s')}`, "
+        f"{cold['idle_wait_s']:g} s pause): median {_ms(first['median'])} ms "
+        f"(min {_ms(first['min'])}, max {_ms(first['max'])}) against "
+        f"{_ms(warm['median'])} ms warm, a cold cost of {_ms(cold['cold_cost_ms'])} ms, "
+        f"of which {_ms(cold['db_span_cost_ms'])} ms in the `db` span. "
+        f"{cold['confirmed_cold_samples']} of {cold['samples']} samples were confirmed cold "
+        "by a new backend appearing in `pg_stat_activity`."
+    )
+
+
+def render_load_table(data: dict[str, Any]) -> str:
+    r = data["result"]
+    host = data.get("host_samples") or {}
+    audit = data.get("audit_verify") or {}
+    rate = r["error_rate"] * 100
+    rows = [
+        (
+            "Identities",
+            f"{r['identities']} machine identities (bench-01 to bench-{r['identities']:02d})",
+        ),
+        ("Concurrency", f"{r['concurrency']}"),
+        ("Duration", f"{r['duration_s']:g} s, mix `{data.get('mix')}`"),
+        (
+            "Total requests",
+            f"{r['total_requests']} ({r.get('rate_limited', 0)} rate-limited)",
+        ),
+        ("Requests/s", f"{r['requests_per_s']:g}"),
+        (
+            "Latency p50 / p95 / p99",
+            f"{_ms(r['p50_ms'])} / {_ms(r['p95_ms'])} / {_ms(r['p99_ms'])} ms",
+        ),
+        (
+            "Error rate (rate-limited calls excluded)",
+            f"{rate:.2f}% ({r.get('errors', 0)} errors)",
+        ),
+        (
+            "Peak Postgres connections (pgwarden roles, `pg_stat_activity`)",
+            str(r["peak_pg_connections"])
+            if r.get("peak_pg_connections") is not None
+            else "not sampled",
+        ),
+    ]
+    if host:
+        rows += [
+            (
+                "Gateway peak CPU (`docker stats`, percent of one core)",
+                f"{host['gateway_cpu_percent_of_one_core_peak']:g}% "
+                f"(mean {host['gateway_cpu_percent_of_one_core_mean']:g}%)",
+            ),
+            ("Gateway peak RSS", f"{host['gateway_rss_mib_peak']:g} MiB"),
+        ]
+    if audit:
+        outcome = "OK" if audit.get("ok") else "FAILED"
+        head = f", head seq {audit['head_seq']}" if "head_seq" in audit else ""
+        rows.append(
+            ("`pgwarden audit verify` after the run", f"{outcome}: {audit.get('detail')}{head}")
+        )
+    lines = ["| Measure | Result |", "| --- | --- |"]
+    lines += [f"| {name} | {value} |" for name, value in rows]
+
+    p95_ok = r["p95_ms"] <= LOAD_P95_TARGET_MS
+    err_ok = r.get("errors", 0) == 0
+    lines += [
+        "",
+        f"Design target (p95 <= {LOAD_P95_TARGET_MS:g} ms with 0 non-rate-limit errors): "
+        f"{'met' if p95_ok and err_ok else 'missed'} "
+        f"(p95 {_ms(r['p95_ms'])} ms, {r.get('errors', 0)} errors).",
+        "",
+        _run_line(data),
+    ]
+    return "\n".join(lines)
+
+
 def load_results(results_dir: Path, prefix: str) -> dict[str, Any] | None:
     files = sorted(results_dir.glob(f"{prefix}-*.json"))
     if not files:
@@ -226,6 +428,8 @@ _MARKERS = {
     "redteam": ("<!-- pgwarden:redteam:start -->", "<!-- pgwarden:redteam:end -->"),
     "baselines": ("<!-- pgwarden:baselines:start -->", "<!-- pgwarden:baselines:end -->"),
     "llm": ("<!-- pgwarden:llm:start -->", "<!-- pgwarden:llm:end -->"),
+    "latency": ("<!-- pgwarden:latency:start -->", "<!-- pgwarden:latency:end -->"),
+    "load": ("<!-- pgwarden:load:start -->", "<!-- pgwarden:load:end -->"),
 }
 
 
@@ -242,12 +446,18 @@ def render_readme(readme: str, results_dir: Path) -> str:
     redteam = load_results(results_dir, "redteam")
     baselines = load_results(results_dir, "baselines")
     llm = load_results(results_dir, "llm-redteam")
+    latency = load_results(results_dir, "latency")
+    load = load_results(results_dir, "load")
     if redteam is not None:
         readme = inject(readme, "redteam", render_redteam_table(redteam))
     if baselines is not None:
         readme = inject(readme, "baselines", render_baselines_table(baselines))
     if llm is not None:
         readme = inject(readme, "llm", render_llm_table(llm))
+    if latency is not None:
+        readme = inject(readme, "latency", render_latency_table(latency))
+    if load is not None:
+        readme = inject(readme, "load", render_load_table(load))
     return readme
 
 
@@ -256,7 +466,9 @@ __all__ = [
     "inject",
     "load_results",
     "render_baselines_table",
+    "render_latency_table",
     "render_llm_table",
+    "render_load_table",
     "render_readme",
     "render_redteam_table",
 ]
