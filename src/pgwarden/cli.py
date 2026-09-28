@@ -726,6 +726,53 @@ def audit_export_command(
     asyncio.run(run())
 
 
+@app.command("report")
+def report_command(
+    results: str = typer.Option("docs/results", "--results", help="Directory of *.json results."),
+    readme: str = typer.Option("README.md", "--readme", help="README to inject tables into."),
+    config_doc: str = typer.Option(
+        "docs/configuration.md", "--config-doc", help="Generated configuration reference."
+    ),
+    check: bool = typer.Option(
+        False, "--check", help="Fail if the README or the config doc would change (for CI)."
+    ),
+) -> None:
+    """Render the README results tables and the configuration reference from the models.
+
+    Without --check it writes both; with --check it exits non-zero if either is out
+    of date, printing nothing else.
+    """
+    from pathlib import Path
+
+    from pgwarden.docsgen import generate_configuration_md, render_readme
+
+    drift: list[str] = []
+    config_path = Path(config_doc)
+    wanted_config = generate_configuration_md()
+    current_config = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+    if wanted_config != current_config:
+        drift.append(config_doc)
+        if not check:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(wanted_config, encoding="utf-8")
+
+    readme_path = Path(readme)
+    if readme_path.is_file():
+        current_readme = readme_path.read_text(encoding="utf-8")
+        wanted_readme = render_readme(current_readme, Path(results))
+        if wanted_readme != current_readme:
+            drift.append(readme)
+            if not check:
+                readme_path.write_text(wanted_readme, encoding="utf-8")
+
+    if check:
+        if drift:
+            _fail(f"out of date, regenerate with `pgwarden report`: {', '.join(drift)}")
+        typer.echo("report: README and configuration doc are in sync")
+    else:
+        typer.echo(f"report: updated {', '.join(drift) if drift else 'nothing (already in sync)'}")
+
+
 def main() -> None:
     app()
 
