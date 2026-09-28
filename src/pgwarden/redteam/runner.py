@@ -197,6 +197,9 @@ class Runner:
                 "AND subject = ANY($1::text[])",
                 _RATE_SUBJECTS,
             )
+            # a rerun within the hour (or a screenshot session) can use up the
+            # per-address client registrations the run itself needs
+            await conn.execute("DELETE FROM pgwarden.rate_windows WHERE scope = 'registration'")
         finally:
             await conn.close()
 
