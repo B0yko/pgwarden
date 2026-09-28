@@ -1,0 +1,63 @@
+# Demo deployment config: the mock IdP, five demo identities and the
+# masking/RLS policy that matches demo/sql/. Used by `docker compose up`.
+public_url: http://localhost:8080
+
+demo:
+  enabled: true
+
+upstream:
+  name: mock-idp
+  preset: oidc
+  issuer: http://localhost:9400
+  discovery_url: http://mock-idp:9400/.well-known/openid-configuration
+  client_id: pgwarden-demo
+  scopes: [openid, email, profile]
+
+people:
+  - identity:
+      email: alice@example.com
+    role: alice
+    bundles: [analyst]
+
+  - identity:
+      email: bob@example.com
+    role: bob
+    bundles: [support]
+    writer: support_writer
+
+  - identity:
+      email: dana@example.com
+    role: dana
+    bundles: [support]
+    writer: support_writer
+
+  # carol@example.com and mallory@example.org are deliberately absent from
+  # `people`: carol only approves and administers (see below), and mallory
+  # is an unmapped identity that must get a 403 pointing to an admin.
+
+machines:
+  - name: nightly-report
+    role: nightly_report
+    bundles: [reporting]
+
+approvers:
+  - email: carol@example.com
+
+admins:
+  - email: carol@example.com
+
+masking:
+  columns:
+    public.customers.full_name: name
+    public.customers.email: email
+    public.customers.phone: phone
+  view_grants:
+    public.customers: [analyst, reporting]
+  raw_access_bundles: [support]
+
+rls_required:
+  - public.customers
+  - public.orders
+  - public.support_tickets
+  - public.ticket_notes
+  - public.refunds
