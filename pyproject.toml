@@ -31,6 +31,7 @@ dependencies = [
     "pydantic>=2.7",
     "pyyaml>=6.0",
     "mcp>=2.2,<3",
+    "httpx2>=2.13",
 ]
 
 [project.urls]
@@ -51,6 +52,7 @@ dev = [
     "mypy>=1.11",
     "types-PyYAML>=6.0",
     "asyncpg-stubs>=0.29",
+    "types-authlib>=1.8.0.20260911",
 ]
 
 [tool.hatch.build.targets.wheel]
