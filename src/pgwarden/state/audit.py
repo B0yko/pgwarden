@@ -20,7 +20,7 @@ import hashlib
 import io
 import json
 from collections.abc import AsyncIterator, Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import asyncpg
 
@@ -112,7 +112,7 @@ def compute_row_hash(prev_hash: bytes, row: dict[str, object]) -> bytes:
 
 
 async def record(
-    conn: asyncpg.Connection,
+    conn: asyncpg.Connection[Any] | asyncpg.pool.PoolConnectionProxy[Any],
     *,
     event: Event,
     outcome: Outcome,

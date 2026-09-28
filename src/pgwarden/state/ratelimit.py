@@ -14,7 +14,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import math
-from typing import Literal
+from typing import Any, Literal
 
 import asyncpg
 
@@ -44,7 +44,7 @@ def _window_start(now: dt.datetime, window_seconds: int) -> dt.datetime:
 
 
 async def check_and_increment(
-    conn: asyncpg.Connection,
+    conn: asyncpg.Connection[Any] | asyncpg.pool.PoolConnectionProxy[Any],
     scope: Scope,
     subject: str,
     *,
