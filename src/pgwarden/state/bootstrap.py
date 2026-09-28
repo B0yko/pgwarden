@@ -1,28 +1,32 @@
 """``pgwarden db init``: create the state role and database, apply migrations,
 and grant ``pgwarden_app`` what it needs.
 
-Runs with ``PGWARDEN_ADMIN_DSN`` (naming an existing maintenance database,
-for example ``postgres``, on the same cluster the state database will live
-on) and reads the target role name, password and database name straight out
-of ``PGWARDEN_STATE_DSN``. Idempotent: a second run creates nothing new,
-probes the existing role's password instead of blindly resetting it (same
-technique as ``pgwarden roles sync``; see :mod:`pgwarden.db.login_probe`),
-and applies zero migrations.
+Runs with ``PGWARDEN_ADMIN_DSN`` -- credentials and a host, whose own
+database part is ignored -- and reads the target role name, password and
+database name straight out of ``PGWARDEN_STATE_DSN``. The state database is
+created, when missing, through the cluster's ``postgres`` maintenance
+database, so the same admin DSN works whether or not the state database
+already exists. Idempotent: a second run creates nothing new, probes the
+existing role's password instead of blindly resetting it (same technique as
+``pgwarden roles sync``; see :mod:`pgwarden.db.login_probe`), and applies
+zero migrations.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import asyncpg
 
+from pgwarden.db.dsn import with_dbname
 from pgwarden.db.identifiers import quote_ident, quote_literal
 from pgwarden.db.login_probe import password_is_current
 from pgwarden.db.scram import verifier_for_password
 from pgwarden.state.migrate import migrate
 
 STATE_SCHEMA = "pgwarden"
+MAINTENANCE_DB = "postgres"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -55,11 +59,6 @@ def parse_state_dsn(state_dsn: str) -> StateTarget:
     )
 
 
-def _with_dbname(dsn: str, dbname: str) -> str:
-    parts = urlsplit(dsn)
-    return urlunsplit((parts.scheme, parts.netloc, f"/{dbname}", parts.query, ""))
-
-
 @dataclasses.dataclass
 class InitResult:
     role_created: bool = False
@@ -80,12 +79,18 @@ class InitResult:
 
 
 async def db_init(admin_dsn: str, state_dsn: str) -> InitResult:
-    """Create/reconcile the state role, database, schema and grants, then migrate."""
+    """Create/reconcile the state role, database, schema and grants, then migrate.
+
+    ``admin_dsn``'s own database part is ignored: the role and (if missing)
+    the database are created via the ``postgres`` maintenance database, and
+    schema/grants/migrations then run against the state database itself.
+    """
     target = parse_state_dsn(state_dsn)
     result = InitResult()
     role_ident = quote_ident(target.user)
 
-    admin = await asyncpg.connect(admin_dsn, timeout=10)
+    maintenance_dsn = with_dbname(admin_dsn, MAINTENANCE_DB)
+    admin = await asyncpg.connect(maintenance_dsn, timeout=10)
     try:
         role_exists = await admin.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", target.user)
         if not role_exists:
@@ -96,7 +101,7 @@ async def db_init(admin_dsn: str, state_dsn: str) -> InitResult:
             )
             result.role_created = True
         else:
-            if not await password_is_current(admin_dsn, target.user, target.password):
+            if not await password_is_current(maintenance_dsn, target.user, target.password):
                 verifier = verifier_for_password(target.password)
                 await admin.execute(
                     f"ALTER ROLE {role_ident} LOGIN PASSWORD {quote_literal(verifier)}"
@@ -112,7 +117,7 @@ async def db_init(admin_dsn: str, state_dsn: str) -> InitResult:
     finally:
         await admin.close()
 
-    state_admin_dsn = _with_dbname(admin_dsn, target.dbname)
+    state_admin_dsn = with_dbname(admin_dsn, target.dbname)
     conn = await asyncpg.connect(state_admin_dsn, timeout=10)
     try:
         schema_exists = await conn.fetchval(

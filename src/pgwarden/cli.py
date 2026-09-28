@@ -1,19 +1,22 @@
 """pgwarden's command-line interface (Typer).
 
 Only implemented command groups are registered here; groups from later build
-steps (``serve``, ``masking``, ``doctor``, ``people``, ``machine``, ``keys``,
+steps (``serve``, ``masking``, ``people``, ``machine``, ``keys``,
 ``audit``, ``redteam``, ``bench``, ``report``) are added when they exist.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json as jsonlib
 import os
 from typing import NoReturn
 
 import typer
 
 from pgwarden.config import ConfigError, load_config
+from pgwarden.db.doctor import run_doctor
+from pgwarden.db.dsn import dbname_from_dsn, with_dbname
 from pgwarden.db.provisioning import sync_roles
 from pgwarden.secrets import SecretError, read_secret
 from pgwarden.state.bootstrap import BootstrapError
@@ -50,6 +53,22 @@ def _require_secret(name: str) -> str:
     if not value:
         _fail(f"{name} (or {name}_FILE) is required")
     return value
+
+
+def _admin_dsn_for_target(admin_dsn: str, target_dsn: str) -> str:
+    """``PGWARDEN_ADMIN_DSN`` with its database part swapped for the target's.
+
+    ``PGWARDEN_ADMIN_DSN`` carries only credentials and a host; `roles sync`,
+    `masking apply` and `doctor` always operate on the database named in
+    ``PGWARDEN_TARGET_DSN``, never on whatever database happened to be in
+    the admin DSN's own path. This is what lets one admin DSN work unchanged
+    for the compose stack and for Cloud SQL.
+    """
+    try:
+        dbname = dbname_from_dsn(target_dsn)
+    except ValueError as exc:
+        _fail(f"PGWARDEN_TARGET_DSN: {exc}")
+    return with_dbname(admin_dsn, dbname)
 
 
 @db_app.command("init")
@@ -92,11 +111,14 @@ def roles_sync_command(
 ) -> None:
     """Reconcile pw_u_<role>/pw_m_<role> login roles with pgwarden.yaml.
 
-    Reads PGWARDEN_CONFIG, PGWARDEN_ADMIN_DSN (naming the target database)
-    and PGWARDEN_ROLE_SECRET (or PGWARDEN_ROLE_SECRET_FILE).
+    Reads PGWARDEN_CONFIG, PGWARDEN_ADMIN_DSN (credentials and a host; its
+    own database part is ignored), PGWARDEN_TARGET_DSN (names the database
+    this command connects to) and PGWARDEN_ROLE_SECRET (or
+    PGWARDEN_ROLE_SECRET_FILE).
     """
     config_path = _require_env("PGWARDEN_CONFIG")
     admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    target_dsn = _require_env("PGWARDEN_TARGET_DSN")
     role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
 
     try:
@@ -104,6 +126,7 @@ def roles_sync_command(
     except ConfigError as exc:
         _fail(str(exc))
 
+    admin_dsn = _admin_dsn_for_target(admin_dsn, target_dsn)
     result = asyncio.run(sync_roles(config, admin_dsn, role_secret, dry_run=dry_run, prune=prune))
     if not result.actions:
         typer.echo("no changes")
@@ -111,6 +134,51 @@ def roles_sync_command(
     verb = "would run" if dry_run else "ran"
     for action in result.actions:
         typer.echo(f"{verb}: [{action.role}] {action.display_sql}")
+
+
+@app.command("doctor")
+def doctor_command(
+    json_output: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+) -> None:
+    """Environment and privilege checks; exits non-zero if any check fails.
+
+    Reads PGWARDEN_CONFIG, PGWARDEN_ADMIN_DSN (credentials and a host; its
+    own database part is ignored), PGWARDEN_TARGET_DSN (names the database
+    every check but the pooler check connects to) and PGWARDEN_ROLE_SECRET
+    (or PGWARDEN_ROLE_SECRET_FILE; used only to derive the pooler check's
+    probe credential, never sent as the admin DSN).
+    """
+    config_path = _require_env("PGWARDEN_CONFIG")
+    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    target_dsn = _require_env("PGWARDEN_TARGET_DSN")
+    role_secret = _require_secret("PGWARDEN_ROLE_SECRET")
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _fail(str(exc))
+
+    admin_dsn = _admin_dsn_for_target(admin_dsn, target_dsn)
+    report = asyncio.run(
+        run_doctor(config, admin_dsn=admin_dsn, target_dsn=target_dsn, role_secret=role_secret)
+    )
+
+    if json_output:
+        payload = [
+            {"check": r.check, "status": r.status, "message": r.message} for r in report.results
+        ]
+        typer.echo(jsonlib.dumps(payload, indent=2))
+    else:
+        colors = {
+            "pass": typer.colors.GREEN,
+            "warn": typer.colors.YELLOW,
+            "fail": typer.colors.RED,
+        }
+        for r in report.results:
+            typer.secho(f"[{r.status.upper():4}] {r.check}: {r.message}", fg=colors[r.status])
+
+    if not report.ok:
+        raise typer.Exit(code=1)
 
 
 def main() -> None:
