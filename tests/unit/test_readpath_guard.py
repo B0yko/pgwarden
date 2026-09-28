@@ -46,3 +46,19 @@ def test_readpath_never_calls_conn_execute_with_the_sql_parameter_by_alias() -> 
     assert not re.search(r"^\s*sql\s*=", text, re.MULTILINE), (
         "sql (the user-SQL parameter) must never be reassigned/aliased in readpath.py"
     )
+
+
+# The write path handles user SQL too: the validator (EXPLAIN prefix + user SQL)
+# and the executor (the stored statement). Same rule: prepare() only.
+VALIDATE = REPO_ROOT / "src" / "pgwarden" / "approvals" / "validate.py"
+SERVICE = REPO_ROOT / "src" / "pgwarden" / "approvals" / "service.py"
+_FORBIDDEN_SUBSCRIPT = re.compile(r"\.(execute|fetch|fetchval|fetchrow)\(\s*\w+\[\s*[\"']sql_text")
+
+
+def test_write_path_user_sql_only_goes_through_prepare() -> None:
+    for path in (VALIDATE, SERVICE):
+        text = path.read_text(encoding="utf-8")
+        assert not _FORBIDDEN.findall(text), f"{path}: user SQL passed to execute/fetch"
+        assert not _FORBIDDEN_SUBSCRIPT.findall(text), f"{path}: stored SQL passed to execute/fetch"
+    assert re.search(r"\.prepare\(\s*EXPLAIN_PREFIX \+ sql\s*\)", VALIDATE.read_text("utf-8"))
+    assert _ALLOWED_PREPARE.search(SERVICE.read_text("utf-8"))

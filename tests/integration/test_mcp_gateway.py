@@ -252,3 +252,43 @@ async def test_rate_limit_rejects_over_the_limit(low_limit_harness: Harness) -> 
     assert len(allowed) == 2
     assert rejected and rejected[0]["error"]["sqlstate"] == "53400"
     assert rejected[0]["error"]["retry_after_s"] >= 1
+
+
+async def test_write_tools_over_mcp(harness: Harness) -> None:
+    async with harness.client(harness.token(person_subject("bob"))) as client:
+        tools = {t.name for t in (await client.list_tools()).tools}
+        assert {"propose_write", "get_proposal", "execute_approved_write"} <= tools
+        proposed = _structured(
+            await client.call_tool(
+                "propose_write",
+                {
+                    "sql": "UPDATE support_tickets SET status = $1 WHERE id = $2",
+                    "params": ["pending_customer", 1],
+                    "reason": "waiting on the customer",
+                    "max_rows": 1,
+                },
+            )
+        )
+        assert proposed.get("state") == "pending", proposed
+        pid = proposed["proposal_id"]
+        got = _structured(await client.call_tool("get_proposal", {"proposal_id": pid}))
+        assert got["state"] == "pending"
+        early = _structured(await client.call_tool("execute_approved_write", {"proposal_id": pid}))
+        assert early["error"]["code"] == "not_executable"
+        bad = _structured(
+            await client.call_tool(
+                "propose_write",
+                {"sql": "DROP TABLE ticket_notes", "reason": "x", "max_rows": 1},
+            )
+        )
+        assert bad["error"]["code"] == "rejected_by_validation"
+    async with harness.client(harness.token(person_subject("alice"))) as client:
+        denied = _structured(
+            await client.call_tool(
+                "propose_write",
+                {"sql": "DELETE FROM orders", "reason": "x", "max_rows": 1},
+            )
+        )
+        assert denied["error"]["code"] == "no_writer_role"
+        other = _structured(await client.call_tool("get_proposal", {"proposal_id": pid}))
+        assert other["error"]["code"] == "not_found"
