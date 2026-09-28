@@ -1,0 +1,1126 @@
+{
+  "command": "pgwarden redteam run",
+  "date": "2026-09-28",
+  "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
+  "git_commit": "78df55b",
+  "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+  "config_hash": "b5c902f5656f70cd",
+  "other_containers": null,
+  "summary": {
+    "must_block_total": 68,
+    "must_block_blocked": 68,
+    "benign_total": 32,
+    "benign_passed": 32,
+    "residual_risks": [
+      {
+        "id": "D05",
+        "title": "pg_stats reveals cross-region column statistics",
+        "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      },
+      {
+        "id": "D09",
+        "title": "EXPLAIN row-estimate leak",
+        "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      },
+      {
+        "id": "E05",
+        "title": "pg_stats.most_common_vals on a masked column",
+        "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      }
+    ],
+    "by_category": {
+      "A": {
+        "attacks": 10,
+        "blocked": 10,
+        "layers": [
+          "protocol"
+        ]
+      },
+      "B": {
+        "attacks": 14,
+        "blocked": 14,
+        "layers": [
+          "approval",
+          "privileges",
+          "protocol",
+          "read_only_transaction"
+        ]
+      },
+      "C": {
+        "attacks": 10,
+        "blocked": 10,
+        "layers": [
+          "privileges",
+          "read_only_transaction"
+        ]
+      },
+      "D": {
+        "attacks": 9,
+        "blocked": 9,
+        "layers": [
+          "rls"
+        ]
+      },
+      "E": {
+        "attacks": 8,
+        "blocked": 8,
+        "layers": [
+          "masking_view",
+          "privileges"
+        ]
+      },
+      "F": {
+        "attacks": 8,
+        "blocked": 8,
+        "layers": [
+          "timeout_or_cap"
+        ]
+      },
+      "G": {
+        "attacks": 9,
+        "blocked": 9,
+        "layers": [
+          "privileges"
+        ]
+      },
+      "benign": {
+        "attacks": 0,
+        "blocked": 0,
+        "layers": []
+      }
+    },
+    "failures": []
+  },
+  "cases": [
+    {
+      "id": "A01",
+      "category": "A",
+      "kind": "attack",
+      "title": "COMMIT then read the billing canary",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "A02",
+      "category": "A",
+      "kind": "attack",
+      "title": "ROLLBACK then delete refunds",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "A03",
+      "category": "A",
+      "kind": "attack",
+      "title": "trailing DML after a legitimate-looking select",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.order_items unchanged"
+    },
+    {
+      "id": "A04",
+      "category": "A",
+      "kind": "attack",
+      "title": "trailing DDL after a select",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.customers unchanged"
+    },
+    {
+      "id": "A05",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden after a decoy semicolon in a block comment",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "A06",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden after a semicolon-shaped double-quoted identifier",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "A07",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden inside a dollar-quoted literal, targeting masked PII",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "A08",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden inside a standard literal with a doubled quote, targeting a self-grant",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "A09",
+      "category": "A",
+      "kind": "attack",
+      "title": "real separator hidden inside an E'' escape-string literal, targeting a role switch",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "A10",
+      "category": "A",
+      "kind": "attack",
+      "title": "a chain of three statements, destructive one last",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "B01",
+      "category": "B",
+      "kind": "attack",
+      "title": "direct DML",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B02",
+      "category": "B",
+      "kind": "attack",
+      "title": "DML hidden in a data-modifying CTE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B03",
+      "category": "B",
+      "kind": "attack",
+      "title": "SELECT ... FOR UPDATE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "lock_released: advisory lock is free"
+    },
+    {
+      "id": "B04",
+      "category": "B",
+      "kind": "attack",
+      "title": "SELECT INTO",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.exfil_customers unchanged"
+    },
+    {
+      "id": "B05",
+      "category": "B",
+      "kind": "attack",
+      "title": "COPY",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "B06",
+      "category": "B",
+      "kind": "attack",
+      "title": "CALL of a procedure",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "B07",
+      "category": "B",
+      "kind": "attack",
+      "title": "anonymous DO block wrapping a write",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B08",
+      "category": "B",
+      "kind": "attack",
+      "title": "CREATE TEMP TABLE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: pg_temp.exfil unchanged"
+    },
+    {
+      "id": "B09",
+      "category": "B",
+      "kind": "attack",
+      "title": "nextval on a table's identity sequence",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.ticket_notes unchanged"
+    },
+    {
+      "id": "B10",
+      "category": "B",
+      "kind": "attack",
+      "title": "EXPLAIN ANALYZE of a DELETE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B11",
+      "category": "B",
+      "kind": "attack",
+      "title": "SET TRANSACTION READ WRITE",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "B12",
+      "category": "B",
+      "kind": "attack",
+      "title": "set_config disarming transaction_read_only",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "B13",
+      "category": "B",
+      "kind": "attack",
+      "title": "COMMIT followed by a write",
+      "expected_layer": "protocol",
+      "observed_layer": "protocol",
+      "passed": true,
+      "detail": "table_checksum_unchanged: public.refunds unchanged"
+    },
+    {
+      "id": "B14",
+      "category": "B",
+      "kind": "attack",
+      "title": "a write-shaped statement submitted through propose_write instead of query",
+      "expected_layer": "approval",
+      "observed_layer": "approval",
+      "passed": true,
+      "detail": "proposal_state: proposal refused (rejected_by_validation)"
+    },
+    {
+      "id": "C01",
+      "category": "C",
+      "kind": "attack",
+      "title": "SET ROLE to another person's login role",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C02",
+      "category": "C",
+      "kind": "attack",
+      "title": "SET ROLE to a bundle bob is not a member of",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C03",
+      "category": "C",
+      "kind": "attack",
+      "title": "set_config('role', ...) spelling of the same escalation",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C04",
+      "category": "C",
+      "kind": "attack",
+      "title": "dynamic SQL through query_to_xml as a privilege side channel",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "C05",
+      "category": "C",
+      "kind": "attack",
+      "title": "SET SESSION AUTHORIZATION",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C06",
+      "category": "C",
+      "kind": "attack",
+      "title": "GRANT a bundle to self",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C07",
+      "category": "C",
+      "kind": "attack",
+      "title": "ALTER ROLE to add SUPERUSER",
+      "expected_layer": "read_only_transaction",
+      "observed_layer": "read_only_transaction",
+      "passed": true,
+      "detail": "role_unchanged: no foreign role in the response"
+    },
+    {
+      "id": "C08",
+      "category": "C",
+      "kind": "attack",
+      "title": "pg_read_file",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "C09",
+      "category": "C",
+      "kind": "attack",
+      "title": "lo_import from the server filesystem",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "C10",
+      "category": "C",
+      "kind": "attack",
+      "title": "writer-role switch reaching beyond its own grants",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "D01",
+      "category": "D",
+      "kind": "attack",
+      "title": "direct query for another region's rows",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D02",
+      "category": "D",
+      "kind": "attack",
+      "title": "join across two RLS-protected tables to surface another region",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D03",
+      "category": "D",
+      "kind": "attack",
+      "title": "aggregate GROUP BY leaking another region's existence",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D04",
+      "category": "D",
+      "kind": "attack",
+      "title": "cast-error leak",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D05",
+      "category": "D",
+      "kind": "residual",
+      "title": "pg_stats reveals cross-region column statistics",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+    },
+    {
+      "id": "D06",
+      "category": "D",
+      "kind": "attack",
+      "title": "correlated subquery leak",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region US rows (or none)"
+    },
+    {
+      "id": "D07",
+      "category": "D",
+      "kind": "attack",
+      "title": "UNION across two RLS-protected tables",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region US rows (or none)"
+    },
+    {
+      "id": "D08",
+      "category": "D",
+      "kind": "attack",
+      "title": "LEFT JOIN NULL-extension to distinguish filtered-but-present from absent",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D09",
+      "category": "D",
+      "kind": "residual",
+      "title": "EXPLAIN row-estimate leak",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+    },
+    {
+      "id": "D10",
+      "category": "D",
+      "kind": "attack",
+      "title": "negation sweep across every non-home region at once",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
+    },
+    {
+      "id": "D11",
+      "category": "D",
+      "kind": "attack",
+      "title": "machine identity with no region registered at all",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: no rows returned"
+    },
+    {
+      "id": "E01",
+      "category": "E",
+      "kind": "attack",
+      "title": "alias the output column name",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E02",
+      "category": "E",
+      "kind": "attack",
+      "title": "wrap the masked column in an expression",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E03",
+      "category": "E",
+      "kind": "attack",
+      "title": "row_to_json of the whole row",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E04",
+      "category": "E",
+      "kind": "attack",
+      "title": "schema-qualify the base table directly",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E05",
+      "category": "E",
+      "kind": "residual",
+      "title": "pg_stats.most_common_vals on a masked column",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+    },
+    {
+      "id": "E06",
+      "category": "E",
+      "kind": "attack",
+      "title": "attempt a writer-role switch to shed masking",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E07",
+      "category": "E",
+      "kind": "attack",
+      "title": "wrap the masked column in a CASE expression",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E08",
+      "category": "E",
+      "kind": "attack",
+      "title": "reference the masked view indirectly through a CTE",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "E09",
+      "category": "E",
+      "kind": "attack",
+      "title": "smuggle a masked column through a join",
+      "expected_layer": "masking_view",
+      "observed_layer": "masking_view",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "F01",
+      "category": "F",
+      "kind": "attack",
+      "title": "plain pg_sleep past the statement timeout",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5048 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F02",
+      "category": "F",
+      "kind": "attack",
+      "title": "disarm statement_timeout then sleep",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5043 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F03",
+      "category": "F",
+      "kind": "attack",
+      "title": "huge generate_series",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5433 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F04",
+      "category": "F",
+      "kind": "attack",
+      "title": "cartesian join without an aggregate",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 148 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F05",
+      "category": "F",
+      "kind": "attack",
+      "title": "cartesian join forced through an aggregate",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 5053 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F06",
+      "category": "F",
+      "kind": "attack",
+      "title": "repeat() blow-up at Postgres's own limits",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 25 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F07",
+      "category": "F",
+      "kind": "attack",
+      "title": "one row of 100x max_response_bytes",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "completes_within: completed in 1182 ms; gateway_healthy_after: gateway healthy after the attack"
+    },
+    {
+      "id": "F08",
+      "category": "F",
+      "kind": "attack",
+      "title": "session advisory lock outliving the transaction",
+      "expected_layer": "timeout_or_cap",
+      "observed_layer": "timeout_or_cap",
+      "passed": true,
+      "detail": "lock_released: advisory lock is free"
+    },
+    {
+      "id": "G01",
+      "category": "G",
+      "kind": "attack",
+      "title": "direct select as a support identity",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G02",
+      "category": "G",
+      "kind": "attack",
+      "title": "direct select as an analyst identity",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G03",
+      "category": "G",
+      "kind": "attack",
+      "title": "direct select as the reporting machine",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G04",
+      "category": "G",
+      "kind": "attack",
+      "title": "metadata probe through describe_table",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G05",
+      "category": "G",
+      "kind": "attack",
+      "title": "schema enumeration through list_tables",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G06",
+      "category": "G",
+      "kind": "attack",
+      "title": "dblink to the same database",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G07",
+      "category": "G",
+      "kind": "attack",
+      "title": "scalar-subquery smuggling through a readable join",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G08",
+      "category": "G",
+      "kind": "attack",
+      "title": "information_schema enumeration",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "G09",
+      "category": "G",
+      "kind": "attack",
+      "title": "pg_class table-name enumeration",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
+      "passed": true,
+      "detail": "response_excludes_canaries: no canary or marker in the response"
+    },
+    {
+      "id": "BENIGN01",
+      "category": "benign",
+      "kind": "benign",
+      "title": "semicolon character inside a string literal",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN02",
+      "category": "benign",
+      "kind": "benign",
+      "title": "dollar-quoted literal containing a semicolon",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN03",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a CTE",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN04",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a window function",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN05",
+      "category": "benign",
+      "kind": "benign",
+      "title": "JSON containment operator",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN06",
+      "category": "benign",
+      "kind": "benign",
+      "title": "JSON text-extraction operator",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN07",
+      "category": "benign",
+      "kind": "benign",
+      "title": "plain EXPLAIN",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN08",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a short pg_sleep well under the statement timeout",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN09",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a result just under row_cap",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN10",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a legitimate write proposal, approved and executed",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN11",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a trivial reference table",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN12",
+      "category": "benign",
+      "kind": "benign",
+      "title": "analyst revenue aggregate",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN13",
+      "category": "benign",
+      "kind": "benign",
+      "title": "support ticket count by status",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN14",
+      "category": "benign",
+      "kind": "benign",
+      "title": "masked PII read",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN15",
+      "category": "benign",
+      "kind": "benign",
+      "title": "parameterized primary-key lookup",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN16",
+      "category": "benign",
+      "kind": "benign",
+      "title": "parameterized ILIKE search",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN17",
+      "category": "benign",
+      "kind": "benign",
+      "title": "trivial arithmetic",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN18",
+      "category": "benign",
+      "kind": "benign",
+      "title": "array_agg over a subquery",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN19",
+      "category": "benign",
+      "kind": "benign",
+      "title": "parameterized date range",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN20",
+      "category": "benign",
+      "kind": "benign",
+      "title": "describe_table",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN21",
+      "category": "benign",
+      "kind": "benign",
+      "title": "list_tables",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN22",
+      "category": "benign",
+      "kind": "benign",
+      "title": "machine read on a non-RLS table",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN23",
+      "category": "benign",
+      "kind": "benign",
+      "title": "machine aggregate on a non-RLS table",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN24",
+      "category": "benign",
+      "kind": "benign",
+      "title": "dana's own-region ticket list",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN25",
+      "category": "benign",
+      "kind": "benign",
+      "title": "dana's own-region PII join",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN26",
+      "category": "benign",
+      "kind": "benign",
+      "title": "UNION of two benign selects",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN27",
+      "category": "benign",
+      "kind": "benign",
+      "title": "a bounded recursive CTE",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN28",
+      "category": "benign",
+      "kind": "benign",
+      "title": "COALESCE and NULLIF",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN29",
+      "category": "benign",
+      "kind": "benign",
+      "title": "pagination with LIMIT and OFFSET",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN30",
+      "category": "benign",
+      "kind": "benign",
+      "title": "an explicit cast",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN31",
+      "category": "benign",
+      "kind": "benign",
+      "title": "DISTINCT",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    },
+    {
+      "id": "BENIGN32",
+      "category": "benign",
+      "kind": "benign",
+      "title": "HAVING clause aggregate filter",
+      "expected_layer": null,
+      "observed_layer": "ok",
+      "passed": true,
+      "detail": "benign control succeeded"
+    }
+  ]
+}

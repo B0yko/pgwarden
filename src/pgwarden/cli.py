@@ -266,6 +266,102 @@ def machine_secret_command(
         typer.echo(issued[names[0]])
 
 
+redteam_app = typer.Typer(no_args_is_help=True, help="Red-team the running gateway.")
+app.add_typer(redteam_app, name="redteam")
+
+
+@redteam_app.command("run")
+def redteam_run_command(
+    target_url: str = typer.Option(
+        None, "--target-url", help="Gateway base URL. Defaults to PGWARDEN_CONFIG's public_url."
+    ),
+    report: str = typer.Option(None, "--report", help="Write the results JSON to this path."),
+    allow_load: bool = typer.Option(
+        False, "--allow-load", help="Also run the flood cases (they generate load)."
+    ),
+    machine: str = typer.Option(
+        "nightly-report", "--machine", help="Machine identity used for machine-run categories."
+    ),
+    machine_secret_file: str = typer.Option(
+        None, "--machine-secret-file", help="File holding the machine's client secret."
+    ),
+    hardware: str = typer.Option(
+        "unspecified", "--hardware", help="Hardware string for the report."
+    ),
+) -> None:
+    """Run the deterministic red-team suite against a deployment and report per category.
+
+    Needs PGWARDEN_ADMIN_DSN (naming the target database) for the state-based
+    oracles, and a machine secret (--machine-secret-file or PGWARDEN_MACHINE_SECRET)
+    for the machine-run cases. Exits non-zero unless every must-block attack is
+    blocked and every benign control passes.
+    """
+    import datetime as _dt
+
+    from pgwarden.redteam.report import build_report
+    from pgwarden.redteam.runner import Runner, load_corpus
+    from pgwarden.redteam.stack import StackClient
+
+    base_url = target_url
+    config_path = os.environ.get("PGWARDEN_CONFIG")
+    if base_url is None:
+        if not config_path:
+            _fail("give --target-url or set PGWARDEN_CONFIG")
+        try:
+            base_url = load_config(config_path).public_url
+        except ConfigError as exc:
+            _fail(str(exc))
+    admin_dsn = _require_secret("PGWARDEN_ADMIN_DSN")
+    secret = None
+    if machine_secret_file:
+        secret = _require_secret_from_path(machine_secret_file)
+    elif os.environ.get("PGWARDEN_MACHINE_SECRET"):
+        secret = os.environ["PGWARDEN_MACHINE_SECRET"]
+    machine_secrets = {machine: secret} if secret else {}
+
+    async def run() -> dict[str, object]:
+        runner = Runner(
+            StackClient(base_url),
+            admin_dsn=admin_dsn,
+            machine_secrets=machine_secrets,
+            allow_load=allow_load,
+        )
+        results = await runner.run(load_corpus())
+        return await build_report(
+            results,
+            admin_dsn=admin_dsn,
+            config_path=config_path,
+            date=os.environ.get("PGWARDEN_RUN_DATE", _dt.date.today().isoformat()),
+            hardware=hardware,
+            command="pgwarden redteam run",
+        )
+
+    document = asyncio.run(run())
+    summary = document["summary"]
+    assert isinstance(summary, dict)
+    if report:
+        from pathlib import Path
+
+        Path(report).parent.mkdir(parents=True, exist_ok=True)
+        Path(report).write_text(jsonlib.dumps(document, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"wrote {report}")
+    for cat, v in summary["by_category"].items():
+        typer.echo(f"{cat}: {v['blocked']}/{v['attacks']} blocked  layers={','.join(v['layers'])}")
+    typer.echo(
+        f"must-block: {summary['must_block_blocked']}/{summary['must_block_total']}  "
+        f"benign: {summary['benign_passed']}/{summary['benign_total']}  "
+        f"residual risks: {len(summary['residual_risks'])}"
+    )
+    gate_ok = (
+        summary["must_block_blocked"] == summary["must_block_total"]
+        and summary["benign_passed"] == summary["benign_total"]
+    )
+    if not gate_ok:
+        for f in summary["failures"]:
+            typer.secho(f"FAIL {f['id']}: {f['detail']}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+
 keys_app = typer.Typer(no_args_is_help=True, help="Generate the gateway's secrets and signing key.")
 app.add_typer(keys_app, name="keys")
 
@@ -316,6 +412,18 @@ def _require_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         _fail(f"{name} is required")
+    return value
+
+
+def _require_secret_from_path(path: str) -> str:
+    from pathlib import Path
+
+    try:
+        value = Path(path).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        _fail(f"cannot read {path}: {exc}")
+    if not value:
+        _fail(f"{path} is empty")
     return value
 
 

@@ -116,6 +116,7 @@ class Runner:
     machine_secrets: dict[str, str] = dataclasses.field(default_factory=dict)
     allow_load: bool = False
     _tokens: dict[str, Tokens] = dataclasses.field(default_factory=dict)
+    _client_id: str | None = None
 
     async def _token(self, identity: str) -> Tokens:
         if identity not in self._tokens:
@@ -124,7 +125,13 @@ class Runner:
                     identity, self.machine_secrets[identity]
                 )
             else:
-                self._tokens[identity] = await self.client.login(IDP_SUB[identity])
+                # Register one OAuth client and reuse it for every person, so a run
+                # does not itself trip the registration rate limit (item 14).
+                if self._client_id is None:
+                    self._client_id = await self.client.register_client("pgwarden red team")
+                self._tokens[identity] = await self.client.login(
+                    IDP_SUB[identity], client_id=self._client_id
+                )
         return self._tokens[identity]
 
     async def run_case(self, case: dict[str, Any], admin: asyncpg.Connection) -> CaseResult:
