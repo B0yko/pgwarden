@@ -1,6 +1,6 @@
 -- Row-level security, keyed on session_user via internal.can_see_region().
 -- Policies are TO PUBLIC so they also bind pw_masker (the masking views'
--- owner, added in a later step) and writer roles reached through SET ROLE:
+-- owner, created by `pgwarden masking apply`) and writer roles reached through SET ROLE:
 -- a session can change current_user but never session_user, so this cannot
 -- be bypassed by SET ROLE, SET SESSION AUTHORIZATION or set_config.
 

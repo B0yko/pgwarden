@@ -14,16 +14,16 @@
 # certificates) -- not the instance's declared IP. ssl_mode is
 # ENCRYPTED_ONLY. Going private-IP-only would remove this finding but
 # requires a VPC network, a reserved peering range and Direct VPC egress on
-# every Cloud Run revision (service and init job); the spec for this module
-# asks only for "no authorized networks", which is what this configures.
+# every Cloud Run revision (service and init job); the module's requirement
+# is only "no authorized networks", which is what this configures.
 # Revisit if the module grows a VPC anyway for another reason.
 AVD-GCP-0017
 
 # Cloud Run public invoker binding (google_cloud_run_v2_service_iam_member.
 # public_invoker, role roles/run.invoker, member allUsers) -- not currently
 # flagged by this trivy checks bundle version (verified: a full severity
-# scan finds no rule for it), but documented here anyway per the spec,
-# since a future checks-bundle update may add one.
+# scan finds no rule for it), but documented here anyway, since a future
+# checks-bundle update may add one.
 #
 # Accepted: intentional. Authentication is OAuth 2.1 + OIDC login at the
 # application layer (every /mcp call is checked against a verified

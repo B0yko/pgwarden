@@ -1,5 +1,5 @@
 # terraform test with mock providers: no credentials, no network calls to
-# Google Cloud. Verifies the security invariants the spec calls out.
+# Google Cloud. Verifies the module's security invariants (see ADR-0008).
 
 mock_provider "google" {}
 mock_provider "random" {}

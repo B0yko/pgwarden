@@ -1,6 +1,6 @@
 -- pgwarden demo database "shop": schema.
 --
--- This file (and its siblings in demo/sql/, applied in filename order) plays
+-- This file (and the other files in demo/sql/, applied in filename order) plays
 -- the part of the DBA's own migrations: pgwarden itself never creates
 -- application tables, bundle roles or RLS policies. It is pure SQL with no
 -- external dependencies, so it can be replayed against any Postgres 16.
@@ -63,7 +63,7 @@ CREATE TABLE support_tickets (
 );
 
 -- Write targets. Start empty; populated only through the approval queue at
--- runtime (a later build step), never by this loader.
+-- runtime, never by this loader.
 CREATE TABLE ticket_notes (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ticket_id integer NOT NULL REFERENCES support_tickets (id),

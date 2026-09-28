@@ -8,9 +8,9 @@ and `deploy/terraform/examples/minimal/` for a runnable example.
 
 **Validated and scanned, not applied in v0.1.** `terraform fmt`,
 `validate`, `test` (mock providers, no credentials), `tflint` and `trivy
-config` all run clean through pinned Docker images -- see
-`../../TERRAFORM_RESULTS.md` for exact versions and output. The module was
-never run against a real Google Cloud project as part of this build.
+config` all run clean through pinned Docker images (`deploy/terraform/check.sh`;
+the image versions are pinned at the top of that script). The module has not
+been applied to a real Google Cloud project.
 
 ## What it creates
 
@@ -141,5 +141,4 @@ paths). It runs `terraform fmt -check`, `validate` (module and example),
 `terraform test`, `tflint` (with the pinned google ruleset) and `trivy
 config`, all through pinned Docker images with `terraform init
 -backend=false`, an empty `HOME`/`CLOUDSDK_CONFIG`, and no `GOOGLE_*`
-variables -- it never authenticates to Google Cloud. See
-`../../TERRAFORM_RESULTS.md` for the last recorded run.
+variables -- it never authenticates to Google Cloud.

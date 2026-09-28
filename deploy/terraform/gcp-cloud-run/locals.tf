@@ -6,7 +6,7 @@ locals {
 
   # Peak connections a single gateway replica's per-person pools can hold
   # open, times the maximum number of replicas, plus headroom for the admin
-  # user and operator access. Documents the formula the spec requires:
+  # user and operator access. Documents the formula the database needs:
   # max_connections >= pool.global_cap x max_instance_count + admin.
   min_max_connections = var.pool_global_cap * var.max_instance_count + var.admin_reserve_connections
 

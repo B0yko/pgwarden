@@ -20,7 +20,7 @@
 #   PGWARDEN_BENCH_MACHINE     "<machine>, <RAM>" in the hardware string, for example
 #                              "MacBook Air M5, 24 GB" (default: the CPU brand and RAM)
 #   PGWARDEN_BENCH_RESULTS_DIR where the JSON goes (default: docs/results)
-#   PGWARDEN_BENCH_LOAD_ARGS   arguments of `pgwarden bench load` (default: the spec's
+#   PGWARDEN_BENCH_LOAD_ARGS   arguments of `pgwarden bench load` (default:
 #                              "--identities 20 --concurrency 20 --duration 60 --mix pk:60,filter:30,agg:10")
 #
 # Sampled from the host while the load runs, at least once a second (docker stats streams

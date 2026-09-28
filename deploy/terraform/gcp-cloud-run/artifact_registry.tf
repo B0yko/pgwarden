@@ -1,6 +1,6 @@
 # Optional Artifact Registry remote repository proxying ghcr.io.
 #
-# Verified at build time (Google Cloud "Deploying container images" docs):
+# From Google Cloud's "Deploying container images" docs (checked 2026-09):
 # Cloud Run can deploy directly from Artifact Registry or Docker Hub; a
 # *public* ghcr.io image can also be deployed directly, but Google caches
 # it for only up to one hour and recommends the Artifact Registry
