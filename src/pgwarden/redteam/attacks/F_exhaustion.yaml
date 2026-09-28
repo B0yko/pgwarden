@@ -110,19 +110,19 @@
 
 - id: F07
   category: F
-  title: one row of 100x max_response_bytes
+  title: one row of 100x max_response_bytes assembled by an aggregate
   identity: bob
   tool: query
   args:
-    sql: "SELECT repeat('a', 104857600)"
+    sql: "SELECT string_agg(md5(i::text), '') FROM generate_series(1, 3300000) AS i"
     params: []
-  objective: return a single row whose serialized size is about 100 times the 1 MiB max_response_bytes default, testing the byte-cap enforcement specifically (as opposed to F06's attempt to break Postgres itself) -- this is the one case in the corpus where the documented residual risk is memory for one oversized row, not a full block.
+  objective: return a single row whose serialized size is about 100 times the 1 MiB max_response_bytes default, built by an aggregate rather than by one function call, testing the byte-cap enforcement specifically (as opposed to F06's attempt to break Postgres itself) -- this is the one case in the corpus where the documented residual risk is memory for one oversized row, not a full block.
   expected_layer: timeout_or_cap
   oracles:
     - type: completes_within
-      ms: 6000
+      ms: 10000
     - type: gateway_healthy_after
-  note: "the response must still be capped/rejected at serialization; if the gateway cannot bound memory for this one oversized row before the byte cap can apply, that is the one memory-related item the evaluation section allows as a residual risk, reported with its measured peak RSS rather than silently passed."
+  note: "the response must still be capped/rejected at serialization; if the gateway cannot bound memory for this one oversized row before the byte cap can apply, that is the one memory-related item the evaluation section allows as a residual risk, reported with its measured peak RSS rather than silently passed. The technique differs from F06 (which asks one repeat() call for more than Postgres allows): here every input is small and the oversized value comes from aggregation."
 
 - id: F08
   category: F
@@ -154,3 +154,63 @@
     - type: completes_within
       ms: 2000
   note: "flood-only case: runs solely under `redteam run --allow-load` per the evaluation section. A rate_limited audit outcome for calls past the 60th counts as blocked here only; this case is a single representative statement repeated by the runner, not the statement text itself that matters."
+
+- id: F10
+  category: F
+  title: unbounded recursive CTE
+  identity: alice
+  tool: query
+  args:
+    sql: "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r) SELECT count(*) FROM r"
+    params: []
+  objective: run a recursive query with no termination condition, so it never returns rows for the row cap to stop.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 10000
+    - type: gateway_healthy_after
+
+- id: F11
+  category: F
+  title: many rows that are individually small but together exceed the byte cap
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT repeat('a', 10000) AS blob FROM generate_series(1, 400)"
+    params: []
+  objective: return several megabytes spread across many rows, each below the row cap, to test the response byte cap separately from the row cap.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 10000
+    - type: gateway_healthy_after
+
+- id: F12
+  category: F
+  title: per-row sleep summed over a generated series
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT pg_sleep(0.5) FROM generate_series(1, 200)"
+    params: []
+  objective: hold the connection for about a hundred seconds by sleeping once per row, where no single call is long.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 10000
+    - type: gateway_healthy_after
+
+- id: F13
+  category: F
+  title: three-way system catalog cross join
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT a.oid FROM pg_class a, pg_attribute b, pg_proc c"
+    params: []
+  objective: generate a very large result out of the system catalogs, which every role can read and which need no user table at all.
+  expected_layer: timeout_or_cap
+  oracles:
+    - type: completes_within
+      ms: 10000
+    - type: gateway_healthy_after

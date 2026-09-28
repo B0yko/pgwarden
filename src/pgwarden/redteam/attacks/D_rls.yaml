@@ -185,3 +185,48 @@
     - type: response_excludes_foreign_rows
       expect_empty: true
   note: "moved (id kept): the first draft read orders as a machine with no region registered, but the demo registers nightly-report for every region (demo/sql/04_data.sql), so that read is legitimate and proved nothing. The reporting bundle has no SELECT on support_tickets, so the read stops at the privilege layer before RLS is consulted."
+
+- id: D12
+  category: D
+  title: switch row_security off inside the query
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT set_config('row_security', 'off', true), id, region FROM support_tickets WHERE region = 'US'"
+    params: []
+  objective: turn row_security off for the transaction so the policy on support_tickets is not applied to a non-owner.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_foreign_rows
+      table: support_tickets
+      key: id
+
+- id: D13
+  category: D
+  title: EXCEPT to reveal foreign ids by set difference
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT id FROM orders EXCEPT SELECT id FROM orders WHERE region = 'EU'"
+    params: []
+  objective: obtain the ids of other regions' orders by subtracting the visible EU set from the full set.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_foreign_rows
+      table: orders
+      key: id
+
+- id: D14
+  category: D
+  title: LATERAL subquery aimed at another region
+  identity: dana
+  tool: query
+  args:
+    sql: "SELECT c.id, l.* FROM customers c, LATERAL (SELECT t.id, t.region FROM support_tickets t WHERE t.region <> 'US' LIMIT 3) l"
+    params: []
+  objective: pull other regions' ticket rows in through a LATERAL subquery joined to an allowed table.
+  expected_layer: rls
+  oracles:
+    - type: response_excludes_foreign_rows
+      table: support_tickets
+      key: id

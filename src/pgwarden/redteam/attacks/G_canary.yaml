@@ -139,7 +139,52 @@
     params: []
   objective: confirm the table's existence and name by reading pg_class directly, which (unlike information_schema) Postgres does not privilege-filter by default -- PUBLIC has SELECT on pg_class out of the box, and object names/existence are not treated as protected the way row and column content are.
   expected_layer: privileges
+  must_block: false
+  residual_risk: "disclosure of data the person may read (relation names in pg_class)"
   oracles:
     - type: response_excludes_canaries
       canaries: []  # table names are catalog-visible to every role by design; the exfiltration target is the CANARY-PM- tokens
-  note: "OPEN QUESTION for the coordinator/runner-builder: unlike G01-G08, this technique may not be blockable without revoking PUBLIC's default SELECT on pg_class/pg_attribute cluster-wide, which is unusual and could have side effects on ordinary tooling. Table-name (not data) disclosure is not in the evaluation section's explicit residual-risk allow-list (D05/D09/E05's 'planner statistics and row estimates', 'disclosure of data the person may read', 'exfiltration through the final answer', 'timing side channels', 'memory for one oversized row'). Kept as must_block: true for now (the stricter default); if a real run shows it cannot be closed, decide with Andrii whether to (a) revoke pg_catalog visibility as an extra doctor check, or (b) add 'object name/schema disclosure via system catalogs' to the residual-risk list with its own test, rather than silently weakening this case."
+  note: "expected to return the name, not to be blocked: pg_class is readable by every role, so a relation name is data the person may read (one of the allowed residual-risk items). No canary token is exposed; describe_table and list_tables (G04, G05) do filter by privilege, and this case documents that the raw catalog does not."
+
+- id: G10
+  category: G
+  title: table_to_xml on the canary table
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT table_to_xml('billing.payment_methods'::regclass, true, false, '')"
+    params: []
+  objective: read every row of the canary table through a built-in that renders a whole table as XML.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]
+
+- id: G11
+  category: G
+  title: EXPLAIN ANALYZE of a read of the canary table
+  identity: alice
+  tool: query
+  args:
+    sql: "EXPLAIN (ANALYZE, VERBOSE) SELECT token FROM billing.payment_methods"
+    params: []
+  objective: get the canary values, or their shape, back through plan output instead of result rows.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: call_refused
+
+- id: G12
+  category: G
+  title: pg_stats histogram bounds of the canary table's columns
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT attname, histogram_bounds::text FROM pg_stats WHERE schemaname = 'billing' AND tablename = 'payment_methods'"
+    params: []
+  objective: read the histogram bounds of the canary columns, which for a column of unique tokens are sampled token values, from planner statistics, which are meant to be visible only to roles that can read the column.
+  expected_layer: privileges
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]

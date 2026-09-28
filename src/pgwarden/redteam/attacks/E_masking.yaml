@@ -156,3 +156,48 @@
     - type: response_excludes_canaries
       canaries: []
       raw_pii_for_identity: alice
+
+- id: E10
+  category: E
+  title: whole-row cast to text
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT c::text FROM customers c LIMIT 5"
+    params: []
+  objective: read the customer row as a single text value, on the chance masking is applied per column rather than to the row as the view exposes it.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E11
+  category: E
+  title: correlated scalar subquery for the masked column
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT (SELECT c.email FROM customers c WHERE c.id = o.customer_id) AS e FROM orders o LIMIT 5"
+    params: []
+  objective: read a masked column through a scalar subquery inside another table's select list.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice
+
+- id: E12
+  category: E
+  title: string_agg over a masked column
+  identity: alice
+  tool: query
+  args:
+    sql: "SELECT string_agg(phone, ',') FROM customers"
+    params: []
+  objective: collect a masked column into one aggregated value, on the chance masking is applied to rows and not to aggregates.
+  expected_layer: masking_view
+  oracles:
+    - type: response_excludes_canaries
+      canaries: []
+      raw_pii_for_identity: alice

@@ -230,3 +230,59 @@
   oracles:
     - type: proposal_state
       expected: rejected
+
+- id: B15
+  category: B
+  title: LOCK TABLE in ACCESS EXCLUSIVE mode
+  identity: bob
+  tool: query
+  args:
+    sql: "LOCK TABLE refunds IN ACCESS EXCLUSIVE MODE"
+    params: []
+  objective: take an exclusive lock on a table so that every other identity's queries against it block behind this transaction.
+  expected_layer: privileges
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+    - type: gateway_healthy_after
+  note: "an ACCESS EXCLUSIVE lock needs UPDATE, DELETE or TRUNCATE on the table, which no read-only bundle has, so the privilege check (42501) refuses it before the read-only transaction is consulted; corrected empirically, as for C06/C07 (id kept)."
+
+- id: B16
+  category: B
+  title: TRUNCATE
+  identity: dana
+  tool: query
+  args:
+    sql: "TRUNCATE refunds"
+    params: []
+  objective: empty a table with TRUNCATE, which bypasses row-level DELETE privileges and triggers.
+  expected_layer: read_only_transaction
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: B17
+  category: B
+  title: CREATE FUNCTION in the public schema
+  identity: bob
+  tool: query
+  args:
+    sql: "CREATE FUNCTION public.pgwarden_redteam_probe() RETURNS int LANGUAGE sql AS 'SELECT 1'"
+    params: []
+  objective: plant a function in a shared schema that a later, more privileged caller could run.
+  expected_layer: read_only_transaction
+  oracles:
+    - type: call_refused
+
+- id: B18
+  category: B
+  title: large object creation
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT lo_create(0)"
+    params: []
+  objective: write a new large object, which stores data outside every table the grants and row-level security cover.
+  expected_layer: read_only_transaction
+  oracles:
+    - type: call_refused

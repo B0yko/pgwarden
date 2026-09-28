@@ -168,3 +168,50 @@
   oracles:
     - type: table_checksum_unchanged
       table: public.ticket_notes
+
+- id: A11
+  category: A
+  title: real separator hidden after a decoy inside a line comment
+  identity: bob
+  tool: query
+  args:
+    sql: |-
+      SELECT 1 -- ; decoy inside a line comment
+      ; DELETE FROM ticket_notes
+    params: []
+  objective: place the real statement separator on the line after a comment that contains a decoy semicolon, aimed at a destructive second statement.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.ticket_notes
+
+- id: A12
+  category: A
+  title: END as the spelling of COMMIT before a second statement
+  identity: dana
+  tool: query
+  args:
+    sql: "END; DELETE FROM refunds WHERE id = 1"
+    params: []
+  objective: close the gateway's read-only transaction with END, the SQL synonym of COMMIT that a keyword filter written for COMMIT would not name, then delete a refund.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: table_checksum_unchanged
+      table: public.refunds
+
+- id: A13
+  category: A
+  title: second statement behind a bound parameter
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT $1::text; SELECT token FROM billing.payment_methods"
+    params: ["harmless"]
+  objective: pass a legitimate bound parameter to the first statement to make the request look like a normal parameterized query, then read the billing canary in a second statement.
+  expected_layer: protocol
+  sqlstate: "42601"
+  oracles:
+    - type: response_excludes_canaries
+      canaries: ["CANARY-PM-"]

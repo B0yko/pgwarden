@@ -157,3 +157,45 @@
       canaries: []
       raw_pii_for_identity: bob
   note: "OBSERVED on the live stack: the statement is not refused. The switch to support_writer inside a FROM subquery only takes effect after the executor has checked privileges as bob (ADR-0002), so it unlocks nothing; bob simply reads customers he is entitled to, and RLS keyed on session_user still limits every returned row to his own region. The oracle scans the whole response for raw PII of any other region. The layer that bounds the read is therefore rls, not privileges (the spec invariant is that a writer-role switch must not widen what is readable). The writer role's own grants cover only support_tickets(id, region) and UPDATE(status), ticket_notes INSERT and refunds INSERT, nothing on customers."
+
+- id: C11
+  category: C
+  title: COPY TO PROGRAM
+  identity: alice
+  tool: query
+  args:
+    sql: "COPY (SELECT 1) TO PROGRAM 'true'"
+    params: []
+  objective: run a program on the database host through COPY ... TO PROGRAM, which is reserved to superusers and pg_execute_server_program members (the command here is the harmless `true`).
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
+
+- id: C12
+  category: C
+  title: pg_reload_conf
+  identity: bob
+  tool: query
+  args:
+    sql: "SELECT pg_reload_conf()"
+    params: []
+  objective: make the server re-read its configuration files, an administrative function that no ordinary role may execute.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: call_refused
+
+- id: C13
+  category: C
+  title: session_replication_role to disable RLS-adjacent machinery
+  identity: dana
+  tool: query
+  args:
+    sql: "SET LOCAL session_replication_role = replica"
+    params: []
+  objective: switch the session to replica mode, which suppresses triggers and foreign-key checks; changing it needs superuser.
+  expected_layer: privileges
+  sqlstate: "42501"
+  oracles:
+    - type: role_unchanged
