@@ -7,7 +7,7 @@ product: pgwarden never parses, rewrites or allowlists SQL.
 
 `pgwarden bench baselines` (needs the `bench` extra) runs the SQL-bearing part of the
 red-team corpus through both filters without executing anything: the `query` cases of
-categories A to G that must be blocked (88 attacks) and the benign controls that send
+categories A to G that must be blocked (90 attacks) and the benign controls that send
 SQL (29). The recorded run is in
 [results/baselines-2026-09-28.json](results/baselines-2026-09-28.json).
 
@@ -44,9 +44,9 @@ It stops stacked statements and plain writes, but every read-shaped attack is a 
 
 | Baseline | Attacks it would let through | Benign queries it would wrongly block |
 | --- | ---: | ---: |
-| keyword/regex blocklist | 54 / 88 | 3 / 29 |
-| sqlglot SELECT-only allowlist | 54 / 88 | 2 / 29 |
-| pgwarden (database-enforced) | 0 / 88 | 0 / 29 |
+| keyword/regex blocklist | 56 / 90 | 3 / 29 |
+| sqlglot SELECT-only allowlist | 56 / 90 | 2 / 29 |
+| pgwarden (database-enforced) | 0 / 90 | 0 / 29 |
 
 The point is not that these filters are badly written: a filter decides from the text of
 a statement, and the text does not say what the database will do with it.

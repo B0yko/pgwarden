@@ -1,10 +1,13 @@
 {
-  "sql_attacks_total": 88,
+  "command": "pgwarden bench baselines",
+  "date": "2026-09-28",
+  "git_commit": "9f60c13",
+  "sql_attacks_total": 90,
   "benign_total": 29,
   "baselines": [
     {
       "baseline": "keyword/regex blocklist",
-      "attacks_let_through": 54,
+      "attacks_let_through": 56,
       "attacks_let_through_ids": [
         "B04",
         "B06",
@@ -22,6 +25,7 @@
         "D02",
         "D03",
         "D04",
+        "D05",
         "D06",
         "D07",
         "D08",
@@ -34,6 +38,7 @@
         "E02",
         "E03",
         "E04",
+        "E05",
         "E06",
         "E07",
         "E08",
@@ -70,7 +75,7 @@
     },
     {
       "baseline": "sqlglot SELECT-only allowlist",
-      "attacks_let_through": 54,
+      "attacks_let_through": 56,
       "attacks_let_through_ids": [
         "B02",
         "B03",
@@ -88,6 +93,7 @@
         "D02",
         "D03",
         "D04",
+        "D05",
         "D06",
         "D08",
         "D10",
@@ -98,6 +104,7 @@
         "E02",
         "E03",
         "E04",
+        "E05",
         "E06",
         "E07",
         "E08",

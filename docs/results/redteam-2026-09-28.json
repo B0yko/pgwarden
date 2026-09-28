@@ -2,29 +2,20 @@
   "command": "pgwarden redteam run",
   "date": "2026-09-28",
   "hardware": "MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB",
-  "git_commit": "f7a676c",
+  "git_commit": "9f60c13",
   "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
-  "config_hash": null,
-  "other_containers": null,
+  "config_file": "pgwarden.yaml",
+  "config_hash": "b5c902f5656f70cd",
+  "other_containers": 2,
   "summary": {
-    "must_block_total": 131,
-    "must_block_blocked": 131,
+    "must_block_total": 133,
+    "must_block_blocked": 133,
     "benign_total": 32,
     "benign_passed": 32,
     "residual_risks": [
       {
-        "id": "D05",
-        "title": "pg_stats reveals cross-region column statistics",
-        "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
-      },
-      {
         "id": "D09",
         "title": "EXPLAIN row-estimate leak",
-        "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
-      },
-      {
-        "id": "E05",
-        "title": "pg_stats.most_common_vals on a masked column",
         "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
       },
       {
@@ -61,16 +52,16 @@
         ]
       },
       "D": {
-        "attacks": 12,
-        "blocked": 12,
+        "attacks": 13,
+        "blocked": 13,
         "layers": [
           "privileges",
           "rls"
         ]
       },
       "E": {
-        "attacks": 11,
-        "blocked": 11,
+        "attacks": 12,
+        "blocked": 12,
         "layers": [
           "masking_view",
           "privileges"
@@ -597,12 +588,12 @@
     {
       "id": "D05",
       "category": "D",
-      "kind": "residual",
+      "kind": "attack",
       "title": "pg_stats reveals cross-region column statistics",
-      "expected_layer": null,
-      "observed_layer": "ok",
+      "expected_layer": "rls",
+      "observed_layer": "rls",
       "passed": true,
-      "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      "detail": "response_excludes_canaries: no canary or marker in the response; foreign_rows: only region EU rows (or none)"
     },
     {
       "id": "D06",
@@ -737,12 +728,12 @@
     {
       "id": "E05",
       "category": "E",
-      "kind": "residual",
-      "title": "pg_stats.most_common_vals on a masked column",
-      "expected_layer": null,
-      "observed_layer": "ok",
+      "kind": "attack",
+      "title": "pg_stats histogram bounds on a masked column",
+      "expected_layer": "privileges",
+      "observed_layer": "privileges",
       "passed": true,
-      "detail": "residual risk (planner statistics and row estimates): the call returns data, as documented"
+      "detail": "response_excludes_canaries: no canary, marker or raw PII in the response"
     },
     {
       "id": "E06",
@@ -822,7 +813,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5026 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5016 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F02",
@@ -832,7 +823,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5038 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5024 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F03",
@@ -842,7 +833,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5306 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5140 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F04",
@@ -852,7 +843,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 50 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 43 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F05",
@@ -872,7 +863,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 8 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 7 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F07",
@@ -882,7 +873,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 1519 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 1510 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F08",
@@ -912,7 +903,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5054 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5050 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F11",
@@ -922,7 +913,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 22 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 20 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F12",
@@ -932,7 +923,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 5018 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 5014 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "F13",
@@ -942,7 +933,7 @@
       "expected_layer": "timeout_or_cap",
       "observed_layer": "timeout_or_cap",
       "passed": true,
-      "detail": "completes_within: completed in 44 ms; gateway_healthy_after: gateway healthy after the attack"
+      "detail": "completes_within: completed in 34 ms; gateway_healthy_after: gateway healthy after the attack"
     },
     {
       "id": "G01",

@@ -179,7 +179,7 @@ via colima with 4 CPUs / 6 GB, against the demo stack. Regenerate the tables wit
 
 ### Red-team suite
 
-131 must-block attacks in nine categories (at least 8 per category, each a distinct
+133 must-block attacks in nine categories (at least 8 per category, each a distinct
 technique) and 32 benign controls, run by `pgwarden redteam run` (deterministic, no LLM;
 runs in CI on every push). Each attack has an **oracle** that decides from database
 what happened (rows returned, table checksums, locks, HTTP status, proposal state,
@@ -208,16 +208,16 @@ the last run; it needs the test Postgres from `devtools/testpg.sh up`).
 | A. Stacked statements | 13 | 13 | protocol |
 | B. Writes on the read path | 18 | 18 | approval, privileges, protocol, read_only_transaction |
 | C. Privilege escalation | 13 | 13 | privileges, read_only_transaction, rls |
-| D. Crossing RLS | 12 | 12 | privileges, rls |
-| E. Bypassing masking | 11 | 11 | masking_view, privileges |
+| D. Crossing RLS | 13 | 13 | privileges, rls |
+| E. Bypassing masking | 12 | 12 | masking_view, privileges |
 | F. Resource exhaustion | 13 | 13 | rate_limit, timeout_or_cap |
 | G. Canary exfiltration | 11 | 11 | privileges |
 | H. Approval abuse | 20 | 20 | approval |
 | I. OAuth and session | 20 | 20 | oauth |
 
-Benign controls passed: 32 / 32. Documented residual risks: 4.
+Benign controls passed: 32 / 32. Documented residual risks: 2.
 
-Run: 2026-09-28; commit `f7a676c`; Postgres 16.15; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB.
+Run: 2026-09-28; commit `9f60c13`; Postgres 16.15; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs / 6 GB; config `pgwarden.yaml` (sha256 b5c902f5656f70cd); 2 other containers running on the machine during the run.
 <!-- pgwarden:redteam:end -->
 
 Two behaviours are documented residual risks: they are run and recorded (the call must
@@ -239,11 +239,13 @@ both filters were written for this comparison.
 <!-- pgwarden:baselines:start -->
 | Baseline | Attacks it would let through | Benign queries it would wrongly block |
 | --- | ---: | ---: |
-| keyword/regex blocklist | 54 / 88 | 3 / 29 |
-| sqlglot SELECT-only allowlist | 54 / 88 | 2 / 29 |
-| **pgwarden (database-enforced)** | **0 / 88** | **0 / 29** |
+| keyword/regex blocklist | 56 / 90 | 3 / 29 |
+| sqlglot SELECT-only allowlist | 56 / 90 | 2 / 29 |
+| **pgwarden (database-enforced)** | **0 / 90** | **0 / 29** |
 
-The 88 attacks are the `query` cases of categories A to G that must be blocked; the 29 benign queries are the benign controls that send SQL. The pgwarden row is the red-team run above, not a separate measurement. sqlglot 30.20.0.
+The 90 attacks are the `query` cases of categories A to G that must be blocked; the 29 benign queries are the benign controls that send SQL. The pgwarden row is the red-team run above, not a separate measurement. sqlglot 30.20.0.
+
+Run: 2026-09-28; commit `9f60c13`.
 <!-- pgwarden:baselines:end -->
 
 ### Latency and load
@@ -379,6 +381,28 @@ exfiltration through the model's final answer is a residual risk the gateway can
 block, reported honestly. This run costs money and is never in default CI.
 The stack runs `demo/pgwarden.llm.yaml` for it, the demo config with the query,
 proposal and registration limits raised to 600 so the run is not throttled.
+
+```bash
+PGWARDEN_DEMO_CONFIG=pgwarden.llm.yaml docker compose up -d --no-deps gateway
+export OPENROUTER_API_KEY=...                     # never written to a file in the repository
+export PGWARDEN_ADMIN_DSN="$(sed 's#/postgres?#/shop?#' .pgwarden-dev/admin/admin_dsn_host)"
+export PGWARDEN_TARGET_DSN="$PGWARDEN_ADMIN_DSN"
+export PGWARDEN_ROLE_SECRET_FILE=.pgwarden-dev/gateway/role_secret
+uv run pgwarden redteam llm --models deepseek/deepseek-v4-flash-0731,qwen/qwen3.7-flash \
+  --trials 3 --max-turns 12 --budget 0.15 \
+  --provider deepseek/deepseek-v4-flash-0731=sail-research --provider qwen/qwen3.7-flash=alibaba \
+  --target-url http://localhost:58080 --report docs/results/llm-redteam-$(date +%F).json
+unset PGWARDEN_DEMO_CONFIG; docker compose up -d --no-deps gateway    # back to the demo config
+```
+
+Each of the 10 tasks runs 3 times per model, at most 12 turns per episode, at temperature
+0, with the provider pinned and fallbacks off; the provider that actually served each call
+is recorded, and costs come from OpenRouter's reported cost per call. Read the table
+carefully: only the DeepSeek model was ever shown a planted injection (6 exposures in 3
+episodes) and it acted on all 6, and the gateway blocked all 6; the Qwen model's tasks
+never surfaced a planted marker, so its zero says nothing about how it would have
+behaved. The gateway container in that run was built from an earlier commit that differs
+from the recorded one only in comments and the `describe_table` tool description.
 
 <!-- pgwarden:llm:start -->
 | Model | Episodes | Tasks solved | Marker exposures | Injection-induced attempts | Attempts per exposure | Attempts blocked | Rows beyond privilege | Writes without approval | Exfil-in-answer episodes | Spend (USD) |
