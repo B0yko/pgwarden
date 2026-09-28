@@ -1,0 +1,42 @@
+# The OWASP taxonomies cited in docs/threat-model.md, pinned so CI can check the
+# threat-model table against them. Names and versions verified 2026-09-28 from
+# genai.owasp.org and owasp.org/www-project-mcp-top-10.
+owasp_llm_2025:
+  version: "OWASP Top 10 for LLM Applications 2025"
+  ids:
+    LLM01: Prompt Injection
+    LLM02: Sensitive Information Disclosure
+    LLM03: Supply Chain
+    LLM04: Data and Model Poisoning
+    LLM05: Improper Output Handling
+    LLM06: Excessive Agency
+    LLM07: System Prompt Leakage
+    LLM08: Vector and Embedding Weaknesses
+    LLM09: Misinformation
+    LLM10: Unbounded Consumption
+owasp_agentic_2026:
+  version: "OWASP Top 10 for Agentic Applications 2026"
+  ids:
+    ASI01: Agent Goal Hijack
+    ASI02: Tool Misuse & Exploitation
+    ASI03: Identity & Privilege Abuse
+    ASI04: Agentic Supply Chain Vulnerabilities
+    ASI05: Unexpected Code Execution (RCE)
+    ASI06: Memory & Context Poisoning
+    ASI07: Insecure Inter-Agent Communication
+    ASI08: Cascading Failures
+    ASI09: Human-Agent Trust Exploitation
+    ASI10: Rogue Agents
+owasp_mcp_2025:
+  version: "OWASP MCP Top 10 2025 (beta / pilot)"
+  ids:
+    MCP01: Token Mismanagement & Secret Exposure
+    MCP02: Privilege Escalation via Scope Creep
+    MCP03: Tool Poisoning
+    MCP04: Software Supply Chain Attacks & Dependency Tampering
+    MCP05: Command Injection & Execution
+    MCP06: Prompt Injection via Contextual Payloads
+    MCP07: Insufficient Authentication & Authorization
+    MCP08: Lack of Audit and Telemetry
+    MCP09: Shadow MCP Servers
+    MCP10: Context Injection & Over-Sharing
