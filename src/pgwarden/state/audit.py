@@ -1,4 +1,4 @@
-"""The append-only, hash-chained audit log (item 8): recording events,
+"""The append-only, hash-chained audit log: recording events,
 verifying the chain in pure Python (independently of the SQL trigger), and
 exporting it.
 

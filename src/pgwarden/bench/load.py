@@ -1,4 +1,4 @@
-"""Concurrent load test (item 5): many identities issuing a mix of queries.
+"""Concurrent load test: many identities issuing a mix of queries.
 
 Each virtual identity holds a warm machine token and loops for the duration,
 picking a query shape by the configured mix. It reports throughput, the p50/p95/

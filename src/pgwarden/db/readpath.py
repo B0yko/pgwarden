@@ -1,4 +1,4 @@
-"""The read path: item 5 of the spec, run for every MCP `query` call.
+"""The read path, run for every MCP `query` call.
 
 Exact sequence, with no SQL parsing or rewriting anywhere in this module:
 
@@ -49,8 +49,7 @@ directly on ``sql`` or on anything derived from it: ``execute()`` called
 with no bound arguments uses the simple query protocol, which accepts
 several semicolon-separated statements and would defeat the multi-statement
 rejection above entirely (the public MCP-server bypass this product exists
-to close -- see the spec's "Guarantees built outside the database get
-bypassed"). Every other ``conn.execute()``/``.execute()`` call in this
+to close -- see ADR-0001). Every other ``conn.execute()``/``.execute()`` call in this
 module runs pgwarden's own fixed SQL text with bound parameters, never
 ``sql``. ``tests/unit/test_readpath_guard.py`` greps this module (and
 ``pools.py``) to enforce this statically.
@@ -71,7 +70,7 @@ from pgwarden.db.params import coerce_params
 from pgwarden.db.pools import PoolManager
 from pgwarden.db.serialize import Column, serialize_rows
 
-# The exact text from spec item 5 step 3. Never interpolate values into
+# The fixed text of step 3 in the module docstring. Never interpolate values into
 # this string; they are always bound as $1..$4.
 _SET_CONFIG_SQL = (
     "SELECT set_config('statement_timeout', $1, true), "

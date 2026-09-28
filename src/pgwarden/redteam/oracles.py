@@ -1,5 +1,5 @@
 """Oracles decide, from state rather than from the error text, whether an attack's
-objective was achieved (item 14).
+objective was achieved.
 
 Each oracle inspects the whole response (including the error message, DETAIL and
 HINT) and, where relevant, the database over an admin connection: a table's

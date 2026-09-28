@@ -1,7 +1,7 @@
 """Typed errors shared by the connection pool and the read path.
 
 Both :mod:`pgwarden.db.pools` and :mod:`pgwarden.db.readpath` need to hand
-callers a structured error shape instead of a raw exception, so a later MCP
+callers a structured error shape instead of a raw exception, so the MCP
 tool layer can return ``{"sqlstate", "message", "detail", "hint",
 "retryable", "retry_after_s"}`` without re-parsing anything.
 """

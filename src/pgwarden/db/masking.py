@@ -1,6 +1,5 @@
-"""Column masking (item 6): ``pw_fn`` functions, ``pw_masked`` views, and the
-doctor checks that verify both hold (item 11) plus the writer-subset
-invariant (item 7).
+"""Column masking: ``pw_fn`` functions, ``pw_masked`` views, and the
+doctor checks that verify both hold plus the writer-subset invariant.
 
 Design, in one pass:
 
@@ -306,7 +305,7 @@ async def _ensure_functions(
 def _tagged_tables(config: Config) -> list[tuple[str, str]]:
     """Every ``(schema, table)`` a masked view must exist for.
 
-    Tables named in ``masking.columns`` (the spec's "tagged table") plus any
+    Tables named in ``masking.columns`` (the "tagged tables") plus any
     additional table named only in ``masking.view_grants`` (a pass-through
     masked view an operator still wants to grant separately from a raw one).
     """
@@ -581,8 +580,8 @@ async def apply_masking(config: Config, admin_dsn: str, *, dry_run: bool = False
         await admin.close()
 
 
-# -- doctor checks (item 11: masking invariant, masked-view grants, item 7's
-# writer-subset invariant) --------------------------------------------------
+# -- doctor checks (masking invariant, masked-view grants, writer-subset
+# invariant) -------------------------------------------------------------------
 
 
 def _masked_login_roles(config: Config) -> list[str]:
@@ -606,7 +605,7 @@ def _masked_login_roles(config: Config) -> list[str]:
 
 
 async def check_masking_invariant(ctx: DoctorContext) -> CheckResult:
-    """No non-exempt role can ``SELECT`` a tagged base column raw (item 6/11)."""
+    """No non-exempt role can ``SELECT`` a tagged base column raw."""
     if not ctx.config.masking.columns:
         return CheckResult("masking_invariant", "warn", "masking.columns is empty in config")
     roles = _masked_login_roles(ctx.config)
@@ -683,7 +682,7 @@ def _writer_bundle_pairs(config: Config) -> dict[str, set[str]]:
     """writer role -> the union of bundles of every person configured with it.
 
     Config ties a writer role to a person, not directly to a bundle, so a
-    writer's "own bundle" (item 7's invariant) is taken as the union of
+    writer's "own bundle" (for the writer-subset invariant) is taken as the union of
     bundles of everyone who has that writer -- in the demo, bob and dana both
     have ``writer: support_writer`` and ``bundles: [support]``, so
     ``support_writer -> {support}``.
@@ -696,7 +695,7 @@ def _writer_bundle_pairs(config: Config) -> dict[str, set[str]]:
 
 
 async def check_writer_subset(ctx: DoctorContext) -> CheckResult:
-    """Each writer role's SELECT privileges are a subset of its bundle(s)' (item 7's invariant).
+    """Each writer role's SELECT privileges are a subset of its bundle(s)'.
 
     A person can ``SET ROLE`` to their own writer role inside a read-only
     query, so the writer role must never be able to see a column its bundle
@@ -753,7 +752,7 @@ async def check_writer_subset(ctx: DoctorContext) -> CheckResult:
 
 
 def masking_checks(config: Config) -> tuple[CheckFn, ...]:
-    """``doctor``'s extra-checks hook (item 6/11's masking checks, item 7's writer-subset).
+    """``doctor``'s extra-checks hook: the masking checks and the writer-subset check.
 
     Takes ``config`` for a stable, self-describing call site in the CLI even
     though each check reads ``ctx.config`` itself at run time (the same

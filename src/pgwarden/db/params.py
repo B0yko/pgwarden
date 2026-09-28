@@ -1,6 +1,6 @@
 """Coerce JSON-decoded query parameters to the types a prepared statement expects.
 
-The MCP `query` tool (a later step) hands this module a JSON-decoded
+The MCP `query` tool hands this module a JSON-decoded
 parameter list (Python ``int``/``float``/``bool``/``str``/``None``/``list``/
 ``dict``, the only shapes JSON has) and the parameter types the *prepared*
 user statement itself reports through ``PreparedStatement.get_parameters()``.

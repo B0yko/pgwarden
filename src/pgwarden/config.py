@@ -1,7 +1,7 @@
 """pydantic v2 models for ``pgwarden.yaml`` and process settings from the environment.
 
 ``docs/configuration.md`` is generated from the field descriptions on these
-models by a later step; keep every field documented here.
+models (``pgwarden report``); keep every field documented here.
 """
 
 from __future__ import annotations
@@ -316,7 +316,7 @@ class PoolConfig(BaseModel):
 
 
 class LimitsConfig(BaseModel):
-    """Default rate limits, enforced in the state database (see item 9)."""
+    """Default rate limits, enforced in the state database (see ADR-0009)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -326,7 +326,7 @@ class LimitsConfig(BaseModel):
 
 
 class ReadConfig(BaseModel):
-    """Defaults applied to every `query` call (see the read path, item 5)."""
+    """Defaults applied to every `query` call (see the read path in ADR-0001)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -342,7 +342,7 @@ class ReadConfig(BaseModel):
 
 
 class WriteConfig(BaseModel):
-    """Defaults applied to the write path (see item 7)."""
+    """Defaults applied to the write path (see ADR-0006)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -356,7 +356,7 @@ class WriteConfig(BaseModel):
 
 
 class NotificationsConfig(BaseModel):
-    """Where approval notifications go (never SQL or parameters; see item 7)."""
+    """Where approval notifications go (never SQL or parameters; see ADR-0006)."""
 
     model_config = ConfigDict(extra="forbid")
 

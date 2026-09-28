@@ -2,7 +2,7 @@
 
 Used only by the read path (:mod:`pgwarden.db.readpath`) to turn
 ``asyncpg.Record`` rows into the JSON the MCP `query` tool result carries.
-Every asyncpg return type item 2 of the spec names is handled explicitly;
+Every common asyncpg return type is handled explicitly;
 anything else falls back to ``str(value)`` rather than raising, since a
 crash on an unanticipated extension type would be worse than a slightly
 lossy value.
@@ -109,8 +109,8 @@ def serialize_rows(
     ``max_bytes`` stops the loop and sets ``bytes_truncated``. If the very
     first row already exceeds ``max_bytes`` on its own, it is dropped and
     the result has zero rows with ``bytes_truncated=True`` -- pgwarden
-    cannot bound a single oversized row without dropping it (see the
-    "oversized row" residual risk noted in STATUS.md).
+    cannot bound a single oversized row without dropping it (the
+    "oversized row" residual risk in ``docs/threat-model.md``).
 
     The byte count is an estimate (each row's own ``json.dumps`` length,
     summed), not a byte-exact count of the final combined array; it is

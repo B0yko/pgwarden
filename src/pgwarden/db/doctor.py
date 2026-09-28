@@ -3,14 +3,16 @@
 Every check takes a shared :class:`DoctorContext` and returns one
 :class:`CheckResult`; ``run_doctor`` runs the fixed set below plus whatever
 ``extra_checks`` the caller passes in. That ``extra_checks`` sequence is
-this module's extension point for step 3's masking invariant, masked-view
-grant and writer-subset checks (item 6 and item 7 of the spec) -- they plug
-in without this module importing anything about masking.
+this module's extension point for the masking invariant, masked-view grant
+and writer-subset checks (see :mod:`pgwarden.db.masking`) -- they plug in
+without this module importing anything about masking.
 
 ``admin_dsn`` must already name the target database (see
 :mod:`pgwarden.db.dsn`, used the same way by `roles sync`). The pooler check
 is the one exception: it never uses ``admin_dsn`` at all, connecting instead
-with a derived person or machine credential, per the spec.
+through the target DSN the gateway itself uses, with a derived person or machine
+credential (an admin DSN could reach Postgres past a pooler the gateway sits
+behind).
 """
 
 from __future__ import annotations
@@ -321,9 +323,8 @@ async def run_doctor(
     """Run every doctor check and return a report.
 
     ``admin_dsn`` must already name the target database. ``extra_checks``
-    lets a later step (masking, item 6's invariant and item 7's
-    writer-subset invariant) add its own checks without this module
-    depending on masking at all.
+    lets the masking checks (the masking invariant and the writer-subset
+    invariant) plug in without this module depending on masking at all.
     """
     admin = await asyncpg.connect(admin_dsn, timeout=10)
     try:

@@ -1,4 +1,4 @@
-"""The admin UI (item 10): server-rendered, no JavaScript, strict CSP.
+"""The admin UI: server-rendered, no JavaScript, strict CSP.
 
 Every route requires an OIDC login plus membership of ``admins`` in config;
 anyone else gets a 403. Every page view is recorded as an ``admin_view`` audit

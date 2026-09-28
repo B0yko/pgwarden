@@ -1,4 +1,4 @@
-"""The deterministic red-team runner (item 14).
+"""The deterministic red-team runner.
 
 It loads the YAML corpus, runs each case against a live deployment as the case's
 identity, derives the *observed* blocking layer from the SQLSTATE, HTTP status or
@@ -144,7 +144,7 @@ class Runner:
 
     async def _registered_client(self) -> str:
         # Register one OAuth client and reuse it for every person, so a run
-        # does not itself trip the registration rate limit (item 14).
+        # does not itself trip the registration rate limit.
         if self._client_id is None:
             self._client_id = await self.client.register_client("pgwarden red team")
         return self._client_id

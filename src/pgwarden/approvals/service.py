@@ -1,4 +1,4 @@
-"""The approval queue (item 7): propose, review, approve or reject, execute.
+"""The approval queue: propose, review, approve or reject, execute.
 
 * ``propose`` validates the write by Postgres (``approvals.validate``), stores
   the exact SQL and parameters with an HMAC binding over (SQL, parameters,

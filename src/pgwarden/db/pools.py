@@ -44,7 +44,7 @@ Idle/expired connections are reaped opportunistically on every
 :meth:`PoolManager.start` and stopped cleanly by :meth:`PoolManager.aclose`,
 so a role that stops being used still has its idle connections closed
 without needing another caller to trigger it. :meth:`PoolManager.close_role`
-drops a role's idle connections immediately, for suspension (a later step).
+drops a role's idle connections immediately, when a person is suspended.
 The wall clock is injectable (``clock=``) so idle/lifetime/eviction
 behaviour is testable without real sleeps.
 """
@@ -186,8 +186,8 @@ class PoolManager:
         Postgres ``CONNECTION LIMIT`` was hit while opening a new physical
         connection, this principal's own pool is already at ``max_size``,
         or the global cap is full with no idle connection anywhere left to
-        evict. The caller (a later MCP tool layer) is expected to surface
-        this as a retryable tool error with ``retry_after_s``.
+        evict. The MCP tool layer surfaces this as a retryable tool error
+        with ``retry_after_s``.
         """
         pooled = await self._checkout(role_name)
         try:
@@ -261,8 +261,8 @@ class PoolManager:
             # The read path always ROLLBACKs before releasing a connection.
             # A connection still in a transaction here means something went
             # wrong upstream (or a future caller did not follow that
-            # discipline); per spec it is closed instead of reused, never
-            # rolled back and put back into circulation.
+            # discipline); it is closed instead of reused, never rolled
+            # back and put back into circulation.
             return False
         try:
             await conn.execute(_RESET_SQL, timeout=_RESET_TIMEOUT_S)

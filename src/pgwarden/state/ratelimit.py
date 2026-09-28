@@ -1,5 +1,5 @@
-"""Fixed-window rate limits stored in Postgres (item 9), so they hold across
-replicas.
+"""Fixed-window rate limits stored in Postgres (see ADR-0009), so they hold
+across replicas.
 
 One atomic ``INSERT ... ON CONFLICT DO UPDATE ... RETURNING`` per call bumps the
 counter for the current clock-aligned window and returns the new count. A count
@@ -20,7 +20,7 @@ import asyncpg
 
 Scope = Literal["query", "proposal", "registration"]
 
-#: Default limits from the spec: (max_count, window_seconds).
+#: Default limits: (max_count, window_seconds).
 DEFAULT_LIMITS: dict[Scope, tuple[int, int]] = {
     "query": (60, 60),
     "proposal": (10, 3600),

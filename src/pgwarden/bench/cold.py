@@ -6,8 +6,8 @@ sample is impractical, so this run is made against the gateway started with
 ``demo/pgwarden.bench-cold.yaml``, which is the bench config plus
 ``pool.idle_timeout_s: 1``. Each sample:
 
-1. lists the role's backend pids (a session of the same role sees its own siblings in
-   ``pg_stat_activity``, so no admin login is needed),
+1. lists the role's backend pids (a session of the same role sees that role's other
+   sessions in ``pg_stat_activity``, so no admin login is needed),
 2. stays silent for ``idle_wait_s`` (longer than the idle timeout, shorter than uvicorn's
    5 s keep-alive, so the HTTP connection stays warm and only the database side is cold),
 3. times one ``query`` call, then lists the pids again,

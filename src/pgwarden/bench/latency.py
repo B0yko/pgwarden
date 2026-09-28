@@ -1,4 +1,4 @@
-"""Latency overhead of the gateway against direct Postgres (item 4).
+"""Latency overhead of the gateway against direct Postgres.
 
 For each committed query shape it times three paths:
 
