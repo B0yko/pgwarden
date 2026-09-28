@@ -16,10 +16,10 @@ import dataclasses
 import datetime as dt
 import json
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -27,11 +27,16 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from pgwarden.config import Config
 from pgwarden.identity import Principal, resolve_principal
 from pgwarden.mcp_server import GatewayDeps, build_mcp_server
-from pgwarden.oauth.jwt import TokenError, verify_access_token
+from pgwarden.oauth.jwt import AccessTokenClaims, TokenError, verify_access_token
 from pgwarden.oauth.keys import SigningKey
 from pgwarden.timing import Timing, render_server_timing
 
 MCP_PATH = "/mcp"
+
+
+#: Async check run after a token verifies and its principal resolves: returns a
+#: denial reason (revoked token, suspended identity) or ``None`` to allow.
+StateCheck = Callable[[AccessTokenClaims, Principal], Awaitable[str | None]]
 
 
 @dataclasses.dataclass
@@ -43,15 +48,17 @@ class Authenticator:
     issuer: str
     audience: str
     now: Callable[[], dt.datetime]
+    state_check: StateCheck | None = None
 
     def resource_metadata_url(self) -> str:
-        return f"{self.config.public_url}/.well-known/oauth-protected-resource"
+        return f"{self.config.public_url.rstrip('/')}/.well-known/oauth-protected-resource/mcp"
 
-    def authenticate(self, token: str) -> tuple[Principal | None, str]:
-        """Verify a token; return ``(principal, client_id)``, principal ``None`` if unmapped.
+    def authenticate(self, token: str) -> tuple[Principal | None, AccessTokenClaims]:
+        """Verify a token; return ``(principal, claims)``, principal ``None`` if unmapped.
 
         Raises :class:`~pgwarden.oauth.jwt.TokenError` if the token itself is
-        invalid (bad signature/typ/alg/aud/iss/exp).
+        invalid (bad signature/typ/alg/aud/iss/exp). Upstream IdP tokens always
+        fail here: they are not signed by this gateway's key (no passthrough).
         """
         claims = verify_access_token(
             token,
@@ -60,7 +67,7 @@ class Authenticator:
             audience=self.audience,
             now=self.now(),
         )
-        return resolve_principal(self.config, claims.subject), claims.client_id
+        return resolve_principal(self.config, claims.subject), claims
 
 
 class _PrincipalMiddleware:
@@ -99,7 +106,7 @@ class _PrincipalMiddleware:
         except TokenError as exc:
             await self._unauthorized(send, str(exc), error="invalid_token")
             return
-        principal, client_id = resolved
+        principal, claims = resolved
         if principal is None:
             await _json(
                 send,
@@ -111,11 +118,18 @@ class _PrincipalMiddleware:
             )
             return
 
+        if self.auth.state_check is not None:
+            with timing.span("auth"):
+                reason = await self.auth.state_check(claims, principal)
+            if reason is not None:
+                await self._unauthorized(send, reason, error="invalid_token")
+                return
+
         state = scope.setdefault("state", {})
         state["principal"] = principal
         state["timing"] = timing
         state["request_id"] = secrets.token_hex(8)
-        state["client_id"] = client_id
+        state["client_id"] = claims.client_id
 
         send_wrapper = _make_send_wrapper(send, timing) if self.server_timing else send
         await self.app(scope, receive, send_wrapper)
@@ -211,8 +225,31 @@ def create_app(
     authenticator: Authenticator,
     *,
     server_timing: bool = False,
+    routers: list[APIRouter] | None = None,
 ) -> FastAPI:
-    """Build the FastAPI app: the MCP mount, auth middleware, and health probes."""
+    """Build the FastAPI app: the MCP mount, auth middleware, health probes and routers.
+
+    ``routers`` are extra FastAPI routers (the OAuth authorization server, the
+    browser login and consent pages, approvals, admin) mounted before the MCP
+    catch-all mount. Unless the caller set one, the authenticator gets a state
+    check that rejects revoked access tokens and suspended identities (and drops a
+    suspended identity's connection pool).
+    """
+    if authenticator.state_check is None:
+
+        async def _state_check(claims: AccessTokenClaims, principal: Principal) -> str | None:
+            from pgwarden.oauth import store
+
+            async with deps.require_state_pool().acquire() as conn:
+                reason = await store.access_denial_reason(
+                    conn, jti=claims.jti, role_name=principal.role_name
+                )
+            if reason is not None and "suspended" in reason:
+                await deps.pool_manager.close_role(principal.role_name)
+            return reason
+
+        authenticator.state_check = _state_check
+
     mcp = build_mcp_server(deps)
     mcp_asgi = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,
@@ -267,6 +304,8 @@ def create_app(
         status = 200 if ok else 503
         return JSONResponse({"status": "ok" if ok else "not ready", "checks": checks}, status)
 
+    for router in routers or []:
+        app.include_router(router)
     app.mount("/", mcp_asgi)
     app.add_middleware(
         _PrincipalMiddleware, authenticator=authenticator, server_timing=server_timing
@@ -274,4 +313,4 @@ def create_app(
     return app
 
 
-__all__ = ["Authenticator", "MCP_PATH", "create_app"]
+__all__ = ["MCP_PATH", "Authenticator", "StateCheck", "create_app"]

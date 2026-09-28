@@ -411,6 +411,15 @@ class Config(BaseModel):
         default_factory=list,
         description="Origin header allowlist checked on /mcp when the header is present.",
     )
+    trusted_proxy_hops: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Reverse proxies in front of the gateway whose X-Forwarded-For entries are trusted "
+            "when deriving the client IP (for the registration rate limit). 0 uses the socket "
+            "peer address; set 1 behind Cloud Run or a single load balancer."
+        ),
+    )
 
     @field_validator("public_url")
     @classmethod

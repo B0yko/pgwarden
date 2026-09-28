@@ -42,6 +42,56 @@ app.add_typer(masking_app, name="masking")
 audit_app = typer.Typer(no_args_is_help=True, help="Audit log: verify the chain and export events.")
 app.add_typer(audit_app, name="audit")
 
+machine_app = typer.Typer(no_args_is_help=True, help="Machine (client_credentials) identities.")
+app.add_typer(machine_app, name="machine")
+
+
+@machine_app.command("secret")
+def machine_secret_command(
+    name: str = typer.Argument(..., help="Machine name from pgwarden.yaml."),
+    out_file: str = typer.Option(
+        None, "--out-file", help="Write the secret to this file (mode 0600) instead of stdout."
+    ),
+) -> None:
+    """Issue or rotate a machine's client secret. It is shown once and stored hashed.
+
+    Reads PGWARDEN_CONFIG and PGWARDEN_STATE_DSN (or PGWARDEN_STATE_DSN_FILE).
+    """
+    import secrets as _secrets
+
+    import asyncpg
+
+    from pgwarden.oauth import store
+
+    config_path = _require_env("PGWARDEN_CONFIG")
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _fail(str(exc))
+    if not any(m.name == name for m in config.machines):
+        _fail(f"no machine named {name!r} in {config_path}")
+    state_dsn = _require_secret("PGWARDEN_STATE_DSN")
+    secret = _secrets.token_urlsafe(32)
+
+    async def run() -> None:
+        conn = await asyncpg.connect(state_dsn, timeout=10)
+        try:
+            await store.set_machine_secret(
+                conn, name, secret, _datetime.datetime.now(tz=_datetime.UTC)
+            )
+        finally:
+            await conn.close()
+
+    asyncio.run(run())
+    if out_file:
+        fd = os.open(out_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(secret + "\n")
+        typer.echo(f"wrote the new secret for {name} to {out_file}")
+    else:
+        typer.echo(secret)
+
+
 keys_app = typer.Typer(no_args_is_help=True, help="Generate the gateway's secrets and signing key.")
 app.add_typer(keys_app, name="keys")
 
