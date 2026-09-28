@@ -265,20 +265,16 @@ def aggregate_repetitions(reps: list[list[LatencyResult]]) -> list[dict[str, Any
         rs = by_query[query]
         row: dict[str, Any] = {"query": query}
         spread: dict[str, list[float]] = {}
+        medians = {m: median(getattr(r, m) for r in rs) for m in METRICS}
         for m in METRICS:
             values = [getattr(r, m) for r in rs]
             spread[m] = [_r(min(values)), _r(max(values))]
-            row[m] = _r(median(values))
-        row["overhead_p50"] = _r(row["gateway_p50"] - row["direct_p50"])
-        row["overhead_p95"] = _r(row["gateway_p95"] - row["direct_p95"])
-        spread["overhead_p50"] = [
-            _r(min(r.gateway_p50 - r.direct_p50 for r in rs)),
-            _r(max(r.gateway_p50 - r.direct_p50 for r in rs)),
-        ]
-        spread["overhead_p95"] = [
-            _r(min(r.gateway_p95 - r.direct_p95 for r in rs)),
-            _r(max(r.gateway_p95 - r.direct_p95 for r in rs)),
-        ]
+            row[m] = _r(medians[m])
+        row["overhead_p50"] = _r(medians["gateway_p50"] - medians["direct_p50"])
+        row["overhead_p95"] = _r(medians["gateway_p95"] - medians["direct_p95"])
+        for pct in ("p50", "p95"):
+            diffs = [getattr(r, f"gateway_{pct}") - getattr(r, f"direct_{pct}") for r in rs]
+            spread[f"overhead_{pct}"] = [_r(min(diffs)), _r(max(diffs))]
         row["spread"] = spread
         spans = sorted({name for r in rs for name in r.server_timing_median})
         row["server_timing_median"] = {
