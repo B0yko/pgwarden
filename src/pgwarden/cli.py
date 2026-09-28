@@ -1,8 +1,8 @@
 """pgwarden's command-line interface (Typer).
 
 Only implemented command groups are registered here; groups from later build
-steps (``serve``, ``masking``, ``people``, ``machine``, ``keys``,
-``audit``, ``redteam``, ``bench``, ``report``) are added when they exist.
+steps (``serve``, ``people``, ``machine``, ``keys``, ``audit``, ``redteam``,
+``bench``, ``report``) are added when they exist.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import typer
 from pgwarden.config import ConfigError, load_config
 from pgwarden.db.doctor import run_doctor
 from pgwarden.db.dsn import dbname_from_dsn, with_dbname
+from pgwarden.db.masking import MaskingError, apply_masking, masking_checks
 from pgwarden.db.provisioning import sync_roles
 from pgwarden.secrets import SecretError, read_secret
 from pgwarden.state.bootstrap import BootstrapError
@@ -31,6 +32,11 @@ app.add_typer(db_app, name="db")
 
 roles_app = typer.Typer(no_args_is_help=True, help="Target-database login role provisioning.")
 app.add_typer(roles_app, name="roles")
+
+masking_app = typer.Typer(
+    no_args_is_help=True, help="Column masking: pw_fn functions and pw_masked views."
+)
+app.add_typer(masking_app, name="masking")
 
 
 def _fail(message: str) -> NoReturn:
@@ -136,6 +142,38 @@ def roles_sync_command(
         typer.echo(f"{verb}: [{action.role}] {action.display_sql}")
 
 
+@masking_app.command("apply")
+def masking_apply_command(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the SQL without executing it."),
+) -> None:
+    """Reconcile pw_fn masking functions and pw_masked views/grants with pgwarden.yaml.
+
+    Reads PGWARDEN_CONFIG, PGWARDEN_ADMIN_DSN (credentials and a host; its
+    own database part is ignored) and PGWARDEN_TARGET_DSN (names the
+    database this command connects to, same as `roles sync`/`doctor`).
+    """
+    config_path = _require_env("PGWARDEN_CONFIG")
+    admin_dsn = _require_env("PGWARDEN_ADMIN_DSN")
+    target_dsn = _require_env("PGWARDEN_TARGET_DSN")
+
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        _fail(str(exc))
+
+    admin_dsn = _admin_dsn_for_target(admin_dsn, target_dsn)
+    try:
+        result = asyncio.run(apply_masking(config, admin_dsn, dry_run=dry_run))
+    except MaskingError as exc:
+        _fail(str(exc))
+    if not result.actions:
+        typer.echo("no changes")
+        return
+    verb = "would run" if dry_run else "ran"
+    for action in result.actions:
+        typer.echo(f"{verb}: [{action.kind}] {action.display_sql}")
+
+
 @app.command("doctor")
 def doctor_command(
     json_output: bool = typer.Option(False, "--json", help="Print the report as JSON."),
@@ -160,7 +198,13 @@ def doctor_command(
 
     admin_dsn = _admin_dsn_for_target(admin_dsn, target_dsn)
     report = asyncio.run(
-        run_doctor(config, admin_dsn=admin_dsn, target_dsn=target_dsn, role_secret=role_secret)
+        run_doctor(
+            config,
+            admin_dsn=admin_dsn,
+            target_dsn=target_dsn,
+            role_secret=role_secret,
+            extra_checks=masking_checks(config),
+        )
     )
 
     if json_output:
