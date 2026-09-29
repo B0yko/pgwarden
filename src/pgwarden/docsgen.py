@@ -185,19 +185,17 @@ def _llm_exposure_and_cost(data: dict[str, Any], model: str) -> tuple[int, float
 
 def render_llm_table(data: dict[str, Any]) -> str:
     lines = [
-        "| Model | Episodes | Tasks solved | Marker exposures | Injection-induced attempts "
-        "| Attempts per exposure | Attempts blocked | Rows beyond privilege "
-        "| Writes without approval | Exfil-in-answer episodes | Spend (USD) |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Model | Episodes | Solved | Injection attempts / exposures | Blocked "
+        "| Rows beyond privilege | Writes without approval | Exfil in answer | USD |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for r in data.get("per_model", []):
         exposures, cost = _llm_exposure_and_cost(data, r["model"])
-        per_exposure = f"{r['attempts'] / exposures:.2f}" if exposures else "n/a"
+        attempts = f"{r['attempts']} / {exposures}"
         lines.append(
-            f"| `{r['model']}` | {r['episodes']} | {r['tasks_solved']} | {exposures} "
-            f"| {r['attempts']} | {per_exposure} | {r['attempts_blocked']} "
-            f"| {r['rows_beyond_privilege']} | {r['writes_without_approval']} "
-            f"| {r['exfil_episodes']} | {cost:.4f} |"
+            f"| {r['model']} | {r['episodes']} | {r['tasks_solved']} | {attempts} "
+            f"| {r['attempts_blocked']} | {r['rows_beyond_privilege']} "
+            f"| {r['writes_without_approval']} | {r['exfil_episodes']} | {cost:.4f} |"
         )
     lines.append("")
     provider_line = _llm_providers_line(data)
@@ -259,6 +257,7 @@ def render_baselines_table(data: dict[str, Any]) -> str:
 
 _SPAN_ORDER = ("auth", "ratelimit", "db", "audit")
 LATENCY_TARGET_MS = 10.0
+_LATENCY_DETAILS_SUMMARY = "<summary>Server-Timing spans and the cold first query</summary>"
 LOAD_P95_TARGET_MS = 150.0
 
 
@@ -280,7 +279,8 @@ def _range_pair(spread: dict[str, Any] | None, p50: str, p95: str) -> str:
     return f"<br><sub>{_ms(lo50)}-{_ms(hi50)} / {_ms(lo95)}-{_ms(hi95)}</sub>"
 
 
-def _run_line(data: dict[str, Any]) -> str:
+def _run_line(data: dict[str, Any], extra: str = "") -> str:
+    """The run's provenance in small print: date, commit, versions, hardware, config."""
     parts = [f"{data.get('date')}", f"commit `{data.get('git_commit')}`"]
     if data.get("postgres_version"):
         parts.append(f"Postgres {str(data['postgres_version']).split(' ')[0]}")
@@ -292,7 +292,8 @@ def _run_line(data: dict[str, Any]) -> str:
     if other is not None:
         noun = "container" if other == 1 else "containers"
         parts.append(f"{other} other {noun} running on the machine during the run")
-    return "Run: " + "; ".join(parts) + "."
+    tail = f" {extra}" if extra else ""
+    return "<sub>Run: " + "; ".join(parts) + "." + tail + "</sub>"
 
 
 def _audit_line(data: dict[str, Any], when: str) -> str:
@@ -333,25 +334,6 @@ def render_latency_table(data: dict[str, Any]) -> str:
         "of the repetitions' p50 / p95. Overhead is via pgwarden minus direct.",
     ]
 
-    spans = sorted(
-        {name for q in data["queries"] for name in q.get("server_timing_median", {})},
-        key=lambda n: (_SPAN_ORDER.index(n) if n in _SPAN_ORDER else len(_SPAN_ORDER), n),
-    )
-    if spans:
-        lines += [
-            "",
-            "`Server-Timing` span medians inside the gateway (ms):",
-            "",
-            "| Query | " + " | ".join(spans) + " |",
-            "| --- |" + " ---: |" * len(spans),
-        ]
-        for q in data["queries"]:
-            med = q.get("server_timing_median", {})
-            cells = [_ms(med[n]) if n in med else "-" for n in spans]
-            lines.append(f"| {q['query']} | " + " | ".join(cells) + " |")
-
-    lines += ["", _cold_line(data.get("cold_start"))]
-
     first = data["queries"][0]
     overhead = first["overhead_p50"]
     if overhead <= LATENCY_TARGET_MS:
@@ -371,10 +353,27 @@ def render_latency_table(data: dict[str, Any]) -> str:
             f"Design target (overhead p50 <= {LATENCY_TARGET_MS:g} ms on the {first['query']}): "
             f"missed, {_ms(overhead)} ms.{tail}"
         )
-    lines += ["", verdict, "", _run_line(data)]
-    audit = _audit_line(data, "after the latency run")
-    if audit:
-        lines.append(audit)
+    lines += ["", verdict, "", "<details>", _LATENCY_DETAILS_SUMMARY, ""]
+
+    spans = sorted(
+        {name for q in data["queries"] for name in q.get("server_timing_median", {})},
+        key=lambda n: (_SPAN_ORDER.index(n) if n in _SPAN_ORDER else len(_SPAN_ORDER), n),
+    )
+    if spans:
+        lines += [
+            "`Server-Timing` span medians inside the gateway (ms):",
+            "",
+            "| Query | " + " | ".join(spans) + " |",
+            "| --- |" + " ---: |" * len(spans),
+        ]
+        for q in data["queries"]:
+            med = q.get("server_timing_median", {})
+            cells = [_ms(med[n]) if n in med else "-" for n in spans]
+            lines.append(f"| {q['query']} | " + " | ".join(cells) + " |")
+        lines.append("")
+
+    lines += [_cold_line(data.get("cold_start")), "", "</details>", ""]
+    lines.append(_run_line(data, _audit_line(data, "after the latency run")))
     return "\n".join(lines)
 
 
@@ -466,6 +465,55 @@ def render_load_table(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_glance(
+    redteam: dict[str, Any] | None,
+    llm: dict[str, Any] | None,
+    latency: dict[str, Any] | None,
+    load: dict[str, Any] | None,
+) -> str:
+    """The README's headline numbers, one column per recorded run."""
+    cells: list[tuple[str, str]] = []
+    if redteam is not None:
+        s = redteam["summary"]
+        cells.append(
+            (
+                f"{s['must_block_blocked']} / {s['must_block_total']}",
+                "attacks blocked, oracle-verified",
+            )
+        )
+    if llm is not None:
+        per_model = llm.get("per_model", [])
+        leaked = sum(r["rows_beyond_privilege"] + r["writes_without_approval"] for r in per_model)
+        episodes = sum(r["episodes"] for r in per_model)
+        cells.append((str(leaked), f"leaked rows or unapproved writes, {episodes} LLM episodes"))
+    if latency is not None:
+        first = latency["queries"][0]
+        cells.append((f"{_ms(first['overhead_p50'])} ms", "gateway overhead per key lookup, p50"))
+    if load is not None:
+        r = load["result"]
+        cells.append(
+            (
+                f"{r['requests_per_s']:.0f} req/s",
+                f"{r['identities']} identities, p95 {_ms(r['p95_ms'])} ms",
+            )
+        )
+    if not cells:
+        return ""
+    lines = [
+        "| " + " | ".join(head for head, _ in cells) + " |",
+        "|" + " :---: |" * len(cells),
+        "| " + " | ".join(label for _, label in cells) + " |",
+    ]
+    source = latency or redteam or {}
+    if source.get("hardware"):
+        lines += [
+            "",
+            f"<sub>{source['hardware']} · the commands and caveats are under "
+            "[Results](#results)</sub>",
+        ]
+    return "\n".join(lines)
+
+
 def load_results(results_dir: Path, prefix: str) -> dict[str, Any] | None:
     files = sorted(results_dir.glob(f"{prefix}-*.json"))
     if not files:
@@ -477,6 +525,7 @@ def load_results(results_dir: Path, prefix: str) -> dict[str, Any] | None:
 # -- README marker injection ---------------------------------------------------------
 
 _MARKERS = {
+    "glance": ("<!-- pgwarden:glance:start -->", "<!-- pgwarden:glance:end -->"),
     "redteam": ("<!-- pgwarden:redteam:start -->", "<!-- pgwarden:redteam:end -->"),
     "baselines": ("<!-- pgwarden:baselines:start -->", "<!-- pgwarden:baselines:end -->"),
     "llm": ("<!-- pgwarden:llm:start -->", "<!-- pgwarden:llm:end -->"),
@@ -500,6 +549,9 @@ def render_readme(readme: str, results_dir: Path) -> str:
     llm = load_results(results_dir, "llm-redteam")
     latency = load_results(results_dir, "latency")
     load = load_results(results_dir, "load")
+    glance = render_glance(redteam, llm, latency, load)
+    if glance:
+        readme = inject(readme, "glance", glance)
     if redteam is not None:
         readme = inject(readme, "redteam", render_redteam_table(redteam))
     if baselines is not None:
@@ -517,6 +569,7 @@ __all__ = [
     "generate_configuration_md",
     "inject",
     "load_results",
+    "render_glance",
     "render_baselines_table",
     "render_latency_table",
     "render_llm_table",

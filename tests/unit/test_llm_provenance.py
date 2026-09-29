@@ -784,7 +784,18 @@ def test_llm_table_ends_with_the_run_line_when_the_results_carry_one() -> None:
     )
     last = render_llm_table(doc).rstrip().splitlines()[-1]
     assert last == (
-        "Run: 2026-09-28; commit `c6cb29a`; MacBook Air M5, 24 GB, Docker via colima with 4 CPUs "
-        "/ 6 GB; config `pgwarden.llm.yaml` (sha256 3f55c698a58e6159)."
+        "<sub>Run: 2026-09-28; commit `c6cb29a`; MacBook Air M5, 24 GB, Docker via colima "
+        "with 4 CPUs / 6 GB; config `pgwarden.llm.yaml` (sha256 3f55c698a58e6159).</sub>"
     )
     assert "Run:" not in render_llm_table(_results_doc([_row(QWEN)]))
+
+
+def test_llm_table_reports_attempts_against_exposures() -> None:
+    doc = _results_doc([_row(DEEPSEEK, attempts=6, attempts_blocked=6)])
+    doc["episodes"] = [
+        {"model": DEEPSEEK, "markers_seen": ["PWINJ-09", "PWINJ-10"], "cost_usd": 0.001}
+        for _ in range(3)
+    ]
+    row = render_llm_table(doc).splitlines()[2]
+    assert row.startswith(f"| {DEEPSEEK} | 30 | 30 | 6 / 6 | 6 |")
+    assert row.endswith("| 0.0030 |")

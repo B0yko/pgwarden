@@ -10,6 +10,7 @@ from pgwarden.docsgen import (
     generate_configuration_md,
     inject,
     render_baselines_table,
+    render_glance,
     render_latency_table,
     render_load_table,
     render_readme,
@@ -267,3 +268,36 @@ def test_render_readme_fills_the_latency_and_load_markers(tmp_path: Path) -> Non
     assert "OLD" not in out
     assert "| Query | Direct p50 / p95 |" in out and "| Measure | Result |" in out
     assert render_readme(out, tmp_path) == out  # rendering is idempotent
+
+
+def test_glance_shows_the_headline_number_of_each_recorded_run() -> None:
+    redteam = {"summary": {"must_block_blocked": 133, "must_block_total": 133}}
+    llm = {
+        "per_model": [
+            {"episodes": 30, "rows_beyond_privilege": 0, "writes_without_approval": 0},
+            {"episodes": 30, "rows_beyond_privilege": 0, "writes_without_approval": 0},
+        ]
+    }
+    latency = _latency_doc()
+    load = _load_doc()
+    glance = render_glance(redteam, llm, latency, load)
+    header, rule, labels = glance.splitlines()[:3]
+    assert header.startswith("| 133 / 133 | 0 | 4.10 ms |")
+    assert rule == "| :---: | :---: | :---: | :---: |"
+    assert "60 LLM episodes" in labels
+    assert "<sub>MacBook Air M5, 24 GB" in glance
+
+
+def test_glance_leaves_out_runs_that_were_not_recorded() -> None:
+    glance = render_glance(
+        {"summary": {"must_block_blocked": 9, "must_block_total": 10}}, None, None, None
+    )
+    assert glance.splitlines()[0] == "| 9 / 10 |"
+    assert render_glance(None, None, None, None) == ""
+
+
+def test_latency_details_are_folded_and_the_run_line_is_small_print() -> None:
+    table = render_latency_table(_latency_doc())
+    assert "<details>" in table and "</details>" in table
+    assert table.index("Design target") < table.index("<details>")
+    assert table.rstrip().splitlines()[-1].startswith("<sub>Run: ")
