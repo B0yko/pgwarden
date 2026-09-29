@@ -3,8 +3,7 @@
 ## Status
 
 Accepted. Terraform module written, validated and scanned (see below).
-**Not applied to a real project in v0.1** unless explicitly requested; see
-"Applied or not" below.
+**Not applied to a real project in v0.1**; see "Applied or not" below.
 
 ## Context
 
@@ -144,10 +143,9 @@ unsuitable for this kind of service in general.
 
 This module was validated and scanned (`terraform fmt`, `validate`,
 `test`, `tflint`, `trivy config`) but **not applied to a real GCP project**
-as part of building v0.1. `deploy/terraform/check.sh` runs the checks
+in v0.1. `deploy/terraform/check.sh` runs the checks
 through pinned Docker images (Terraform 1.16.4, TFLint 0.64.0, Trivy 0.74.0), and CI runs it
-on every push. It was never applied because doing so
-requires a project and a Google identity that this build environment does
-not have and must not assume; if a project is offered later, applying it
+on every push. It was not applied because doing so
+requires a project and a Google identity; applying it
 still needs the operator to supply the OIDC client secret value (Secret
 Manager container only, see `secrets.tf`) before the service is reachable.

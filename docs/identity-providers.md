@@ -68,7 +68,7 @@ identity from the GitHub user API: the numeric user id and the verified primary
 email (scope `user:email`). Match with `{subject: "<numeric id>"}` or a verified
 `{email}`.
 
-## Verified in this build
+## Verified at v0.1.0
 
 The demo stack runs against an in-repo mock OIDC provider. The generic-OIDC, Google,
 Entra and GitHub presets are covered by unit tests against hand-written, recorded

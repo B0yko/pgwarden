@@ -23,7 +23,7 @@ upstream login and rotation never extends it, and reuse of a rotated token revok
 the family. The `resource` parameter (RFC 8707) is required on `/authorize` and
 `/token` and must equal the canonical URL; a different value is `invalid_target`.
 The MCP authorization specification requires clients to send it and MCP Inspector
-does (verified in this build), so an absent value is rejected. Other clients,
+does (verified at v0.1.0), so an absent value is rejected. Other clients,
 including Claude Code and Cursor, have not been verified against this gateway. Metadata is served per RFC 9728 and RFC 8414;
 CIMD is advertised and preferred, with RFC 7591 dynamic registration kept for
 clients that use it. Consent is shown, and the upstream `state` cookie set, only
