@@ -34,6 +34,9 @@ uv run pgwarden report --check
 - Change a config model? Regenerate the docs with `pgwarden report` (CI checks it).
 - Add a security-relevant behaviour? Add a red-team case in `src/pgwarden/redteam/`
   with an oracle, and a `doctor` check if it is a deployment invariant.
+- Change the look of the README header or the social preview? Edit
+  `devtools/screenshots/brand.py` (the mark is `docs/assets/logo.svg`) and run it; the
+  README screenshots come from `devtools/screenshots/run.py` against a running stack.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## Reporting security issues
