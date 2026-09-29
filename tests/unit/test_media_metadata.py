@@ -60,3 +60,16 @@ def test_committed_screenshots_are_clean_and_referenced() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     referenced = set(re.findall(r"docs/media/([\w.-]+\.png)", readme))
     assert referenced == {p.name for p in files}, "README and docs/media disagree"
+
+
+def test_brand_images_are_clean_and_referenced() -> None:
+    assets = REPO_ROOT / "docs" / "assets"
+    banners = sorted(assets.glob("banner-*.png"))
+    assert {p.name for p in banners} == {"banner-dark.png", "banner-light.png"}
+    for path in [*banners, REPO_ROOT / ".github" / "social-preview.png"]:
+        types = pngmeta.check_file(path)
+        assert not {"tEXt", "zTXt", "iTXt", "eXIf"} & set(types), path.name
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "docs/assets/banner-dark.png" in readme and "docs/assets/banner-light.png" in readme
+    with Image.open(REPO_ROOT / ".github" / "social-preview.png") as image:
+        assert image.size == (1280, 640)

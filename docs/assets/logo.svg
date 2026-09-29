@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="pgwarden">
+  <defs>
+    <linearGradient id="pgw-shield" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 3.5 L55 11.5 V29.5 C55 44.5 45.2 55.2 32 60.5 C18.8 55.2 9 44.5 9 29.5 V11.5 Z" fill="url(#pgw-shield)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="32" cy="21" rx="11.5" ry="4.2"/>
+    <path d="M20.5 21 V38.5 C20.5 40.8 25.6 42.7 32 42.7 C38.4 42.7 43.5 40.8 43.5 38.5 V21"/>
+    <path d="M20.5 29.8 C20.5 32.1 25.6 34 32 34 C38.4 34 43.5 32.1 43.5 29.8"/>
+  </g>
+</svg>

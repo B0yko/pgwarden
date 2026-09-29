@@ -35,11 +35,12 @@ def chunk_types(data: bytes) -> list[str]:
     return types
 
 
-def strip_metadata(png: bytes) -> bytes:
-    """Re-encode `png` from its pixels alone."""
+def strip_metadata(png: bytes, *, keep_alpha: bool = False) -> bytes:
+    """Re-encode `png` from its pixels alone (RGB, or RGBA with `keep_alpha`)."""
+    mode = "RGBA" if keep_alpha else "RGB"
     with Image.open(io.BytesIO(png)) as source:
-        pixels = source.convert("RGB")
-        clean = Image.frombytes("RGB", pixels.size, pixels.tobytes())
+        pixels = source.convert(mode)
+        clean = Image.frombytes(mode, pixels.size, pixels.tobytes())
     out = io.BytesIO()
     clean.save(out, format="PNG", optimize=True)
     return out.getvalue()
