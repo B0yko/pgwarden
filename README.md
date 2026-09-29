@@ -152,7 +152,7 @@ flowchart LR
     client -- sign in --> oauth
     oauth <-- OIDC --> idp
     client -- tool calls --> mcp
-    mcp -- "as pw_u_&lt;person&gt;" --> target
+    mcp -- as the person's role --> target
     mcp --> state
     pages --> state
     classDef hub fill:#2563eb,stroke:#1d4ed8,color:#ffffff
