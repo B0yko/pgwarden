@@ -574,4 +574,4 @@ the social preview. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Apache-2.0. Copyright 2026 Andrii Boiko. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
-Built by [Andrii Boiko](https://boiko.ai/) · [Project overview](https://boiko.ai/work/pgwarden/).
+Built by [Andrii Boiko](https://boiko.ai/) · [LinkedIn](https://www.linkedin.com/in/andriyboyko/) · [Project overview](https://boiko.ai/work/pgwarden/).
