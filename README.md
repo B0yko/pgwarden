@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <img src="docs/assets/banner-light.png" alt="pgwarden: governed Postgres access for AI assistants" width="880">
-  </picture>
+  <img src=".github/social-preview.png" alt="pgwarden: give AI your database, not the keys" width="880">
 </p>
 
 <p align="center">
