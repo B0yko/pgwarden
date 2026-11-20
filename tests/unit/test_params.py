@@ -130,3 +130,43 @@ def test_composite_kind_passes_through_unchanged() -> None:
 def test_extra_values_beyond_declared_types_pass_through() -> None:
     out = coerce_params([1, "2024-01-01"], [_scalar("int4")])
     assert out == [1, "2024-01-01"]
+
+
+def test_invalid_iso_timestamp_string_passes_through_unchanged() -> None:
+    out = coerce_params(["2024-13-45T99:99:99"], [_scalar("timestamptz")])
+    assert out == ["2024-13-45T99:99:99"]
+
+
+def test_invalid_iso_time_string_passes_through_unchanged() -> None:
+    out = coerce_params(["25:61:00"], [_scalar("time")])
+    assert out == ["25:61:00"]
+
+
+def test_invalid_base64_bytea_passes_through_unchanged() -> None:
+    # Not base64: Postgres' own bytea input function rejects it; coercion
+    # never guesses and never raises on user input.
+    out = coerce_params(["!!!not-base64!!!"], [_scalar("bytea")])
+    assert out == ["!!!not-base64!!!"]
+
+
+def test_nonfinite_numbers_reach_postgres_as_decimals_not_exceptions() -> None:
+    # float nan/inf survive Decimal(str(...)); Postgres numeric accepts NaN
+    # and rejects Infinity with its own error. Coercion stays exception-free.
+    out = coerce_params([float("nan"), float("inf")], [_scalar("numeric"), _scalar("numeric")])
+    assert isinstance(out[0], Decimal) and out[0].is_nan()
+    assert isinstance(out[1], Decimal) and out[1].is_infinite()
+
+
+def test_bool_is_not_coerced_to_numeric() -> None:
+    out = coerce_params([True], [_scalar("numeric")])
+    assert out == [True]
+
+
+def test_json_object_and_array_serialized_for_json_columns() -> None:
+    out = coerce_params([{"a": 1}, [1, 2]], [_scalar("json"), _scalar("jsonb")])
+    assert out == [json.dumps({"a": 1}), json.dumps([1, 2])]
+
+
+def test_json_string_passes_through_unchanged() -> None:
+    out = coerce_params(['{"a": 1}'], [_scalar("jsonb")])
+    assert out == ['{"a": 1}']
