@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The demo stack's Postgres healthcheck (and the CI/test Postgres probes) now check
+  over TCP, so they no longer report ready while the entrypoint's temporary initdb
+  server is still loading the demo SQL; a fresh `docker compose up -d --wait` on a
+  busy machine could fail at `init` before this.
 - The brand-image checks match the README's cover header again (the light/dark banner
   pair was replaced by the cover on 2026-11-06); `devtools/screenshots/brand.py` renders
   the banners only and no longer overwrites the designed social-preview cover.

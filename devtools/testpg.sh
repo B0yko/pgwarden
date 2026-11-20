@@ -71,7 +71,7 @@ cmd_up() {
     echo -n "waiting for ${CONTAINER} to accept connections"
     local ready=0
     for _ in $(seq 1 60); do
-      if "${DOCKER}" exec "${CONTAINER}" pg_isready -U postgres >/dev/null 2>&1; then
+      if "${DOCKER}" exec "${CONTAINER}" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
         echo " ready"
         ready=1
         break

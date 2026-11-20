@@ -42,7 +42,7 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres-password
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres" --health-interval 2s
           --health-timeout 3s --health-retries 30
     env:
       PGWARDEN_REQUIRE_PG: "1"
@@ -120,7 +120,7 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres-password
         ports: ["5433:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres" --health-interval 2s
           --health-timeout 3s --health-retries 30
     env:
       PGWARDEN_REQUIRE_PG: "1"
