@@ -112,6 +112,4 @@ async def test_uninitialised_state_pool_is_loud() -> None:
         state_pool=None,
     )
     with pytest.raises(RuntimeError, match="state pool is not initialised"):
-        await mcp_server._audit_fail_closed(
-            deps, _principal(), _ctx(), tool="whoami", outcome="ok"
-        )
+        await mcp_server._audit_fail_closed(deps, _principal(), _ctx(), tool="whoami", outcome="ok")
