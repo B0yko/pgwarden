@@ -573,6 +573,7 @@ pgwarden is listed in these third-party MCP directories:
 
 - [MCPServers.org](https://mcpservers.org/servers/b0yko/pgwarden)
 - [mcpHQ / awesome-mcp-servers](https://github.com/mcpHQ/awesome-mcp-servers#databases-and-storage)
+- [Glama](https://glama.ai/mcp/servers/@B0yko/pgwarden)
 
 These listings do not imply an official MCP Registry listing, a security audit or endorsement.
 
