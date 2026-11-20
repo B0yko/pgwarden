@@ -1,12 +1,14 @@
-"""Render the repository's brand images from one stylesheet.
+"""Render the repository's brand banners from one stylesheet.
 
-- ``docs/assets/banner-dark.png`` and ``docs/assets/banner-light.png``: the README
-  header, picked by a ``<picture>`` element from the reader's colour scheme;
-- ``.github/social-preview.png``: the 1280x640 card GitHub shows when the repository
-  link is shared. There is no API for it: upload the file under Settings > General >
-  Social preview.
+- ``docs/assets/banner-dark.png`` and ``docs/assets/banner-light.png``: light and dark
+  brand banners for surfaces outside the README.
 
-The mark is ``docs/assets/logo.svg``. The images are plain HTML rendered by the same
+The README header and the social preview are the same designed cover, committed at
+``.github/social-preview.png`` (2560x1280, 2x GitHub's 1280x640 card size) and not
+rendered by this script; upload it under Settings > General > Social preview (there
+is no API for that). ``tests/unit/test_media_metadata.py`` keeps it clean and referenced.
+
+The mark is ``docs/assets/logo.svg``. The banners are plain HTML rendered by the same
 Chromium the screenshot script uses, and every PNG is stripped of metadata like the
 README screenshots.
 
@@ -138,43 +140,10 @@ def banner_html(theme: str) -> str:
 </div></body></html>"""
 
 
-def social_html() -> str:
-    """The 1280x640 card for link previews, in the dark theme."""
-    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{BASE_CSS}
-  :root {{ {_vars("dark")} }}
-  body {{ width: 1280px; height: 640px; }}
-  .card {{ width: 1280px; height: 640px; border: 0; padding: 70px 76px; }}
-  .glow {{ right: -200px; top: -240px; width: 780px; height: 780px; }}
-  .brand svg {{ width: 112px; height: 112px; margin: 0 12px 0 -16px; transform: translateY(4px); }}
-  .word {{ font-size: 116px; letter-spacing: -3.6px; }}
-  .tag {{ font-size: 44px; margin-top: 26px; }}
-  .flow {{ position: absolute; left: 76px; right: 76px; bottom: 138px; display: flex;
-           align-items: center; gap: 22px; }}
-  .node {{ font-size: 27px; padding: 16px 26px; border-radius: 14px; border-width: 2px; }}
-  .chips {{ position: absolute; left: 76px; right: 76px; bottom: 58px; display: flex;
-            gap: 10px; font-size: 20px; color: var(--muted); }}
-  .chips b {{ font-weight: 600; border: 1px solid #263a63; border-radius: 999px;
-              padding: 6px 15px; background: #0f1a30; white-space: nowrap; }}
-</style></head><body><div class="card"><div class="glow"></div><div class="grid"></div>
-  <div class="brand">{LOGO}<span class="word">pg<b>warden</b></span></div>
-  <div class="tag">Governed Postgres access for AI assistants</div>
-  <div class="flow">
-    <div class="node">MCP client</div>{_arrow("right", 34)}
-    <div class="node hub">pgwarden gateway</div>{_arrow("right", 34)}
-    <div class="node">Postgres, as the person asking</div>
-  </div>
-  <div class="chips">
-    <b>OAuth 2.1 + OIDC</b><b>one role per person</b><b>RLS + masking</b>
-    <b>human-approved writes</b><b>hash-chained audit</b>
-  </div>
-</div></body></html>"""
-
-
 # (output path, html, css width, css height, device scale, transparent corners)
 TARGETS = [
     (REPO_ROOT / "docs" / "assets" / "banner-dark.png", banner_html("dark"), 1000, 250, 2, True),
     (REPO_ROOT / "docs" / "assets" / "banner-light.png", banner_html("light"), 1000, 250, 2, True),
-    (REPO_ROOT / ".github" / "social-preview.png", social_html(), 1280, 640, 1, False),
 ]
 
 

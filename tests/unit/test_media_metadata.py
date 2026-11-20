@@ -70,6 +70,9 @@ def test_brand_images_are_clean_and_referenced() -> None:
         types = pngmeta.check_file(path)
         assert not {"tEXt", "zTXt", "iTXt", "eXIf"} & set(types), path.name
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "docs/assets/banner-dark.png" in readme and "docs/assets/banner-light.png" in readme
+    # The README header is the cover (the same card as the social preview); the
+    # light/dark banners stay as generated brand assets for other surfaces.
+    assert ".github/social-preview.png" in readme
+    # The cover is a designed asset committed at 2x GitHub's 1280x640 card size.
     with Image.open(REPO_ROOT / ".github" / "social-preview.png") as image:
-        assert image.size == (1280, 640)
+        assert image.size == (2560, 1280)
