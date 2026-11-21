@@ -82,6 +82,9 @@ def test_release_workflow_publishes_to_the_mcp_registry_after_the_image() -> Non
     assert job["permissions"]["id-token"] == "write"
     assert re.fullmatch(r"v\d+\.\d+\.\d+", job["env"]["MCP_PUBLISHER_VERSION"])
     assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["MCP_PUBLISHER_SHA256"])
+    assert job["env"]["TAG"] == "${{ inputs.tag || github.ref_name }}"
+    dispatch = workflow[True]["workflow_dispatch"]  # PyYAML reads the `on` key as True
+    assert dispatch["inputs"]["tag"]["required"] is True
     commands = "\n".join(step.get("run", "") for step in job["steps"])
     assert "sha256sum -c" in commands
     assert "mcp-publisher login github-oidc" in commands
