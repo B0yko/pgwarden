@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-21
+
+### Added
+
+- `server.json` for the official MCP Registry, and the image label
+  `io.modelcontextprotocol.server.name` that the registry checks to verify the image.
+
 ### Security
 
 - Upgraded authlib 1.8.0 to 1.9.10 (fixes CVE-2026-96760, CVE-2026-114615,
@@ -47,5 +54,6 @@ The first release: a working MCP gateway for governed Postgres access.
   baselines, latency and load benchmarks, an LLM indirect-injection run, a threat
   model, a one-command demo stack, and a Terraform module for Cloud Run + Cloud SQL.
 
-[Unreleased]: https://github.com/B0yko/pgwarden/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/B0yko/pgwarden/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/B0yko/pgwarden/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/B0yko/pgwarden/releases/tag/v0.1.0

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.B0yko/pgwarden",
+  "title": "pgwarden",
+  "description": "Give AI assistants access to Postgres with per-user permissions and human approval for writes.",
+  "repository": {
+    "url": "https://github.com/B0yko/pgwarden",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/b0yko/pgwarden:0.1.1",
+      "runtimeHint": "docker",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://localhost:8080/mcp"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "-p",
+          "value": "8080:8080",
+          "description": "Publish the gateway's port; MCP clients connect to /mcp on it."
+        },
+        {
+          "type": "named",
+          "name": "-v",
+          "value": "{config_dir}:/etc/pgwarden:ro",
+          "description": "The directory holding pgwarden.yaml and secrets/ from docs/own-database.md (readable by uid 10001).",
+          "isRequired": true,
+          "variables": {
+            "config_dir": {
+              "description": "Host directory with pgwarden.yaml and the secrets/ directory created by `pgwarden keys generate`.",
+              "format": "filepath",
+              "isRequired": true
+            }
+          }
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "PGWARDEN_CONFIG",
+          "description": "Path to pgwarden.yaml inside the container.",
+          "isRequired": true,
+          "default": "/etc/pgwarden/pgwarden.yaml"
+        },
+        {
+          "name": "PGWARDEN_TARGET_DSN",
+          "description": "Target Postgres 16+ DSN: host, port and database, no user or password.",
+          "isRequired": true,
+          "placeholder": "postgresql://db.example.com:5432/app?sslmode=verify-full"
+        },
+        {
+          "name": "PGWARDEN_STATE_DSN",
+          "description": "State database DSN, connecting as the pgwarden_app role that `pgwarden db init` creates.",
+          "isRequired": true,
+          "isSecret": true,
+          "placeholder": "postgresql://pgwarden_app:<password>@db.example.com:5432/pgwarden_state"
+        },
+        {
+          "name": "PGWARDEN_ROLE_SECRET_FILE",
+          "description": "File with the secret that derives each login role's SCRAM password.",
+          "isRequired": true,
+          "default": "/etc/pgwarden/secrets/role_secret"
+        },
+        {
+          "name": "PGWARDEN_SIGNING_KEY_FILE",
+          "description": "File with the Ed25519 key that signs access tokens.",
+          "isRequired": true,
+          "default": "/etc/pgwarden/secrets/signing_key.pem"
+        },
+        {
+          "name": "PGWARDEN_SESSION_SECRET_FILE",
+          "description": "File with the browser session secret.",
+          "isRequired": true,
+          "default": "/etc/pgwarden/secrets/session_secret"
+        },
+        {
+          "name": "PGWARDEN_OIDC_CLIENT_SECRET_FILE",
+          "description": "File with the client secret your identity provider issued for pgwarden.",
+          "isRequired": true,
+          "default": "/etc/pgwarden/secrets/oidc_client_secret"
+        }
+      ]
+    }
+  ]
+}

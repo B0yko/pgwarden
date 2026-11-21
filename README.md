@@ -89,7 +89,7 @@ as any of the demo identities:
 Without a clone:
 
 ```bash
-docker pull ghcr.io/b0yko/pgwarden:0.1.0                            # the gateway (amd64, arm64)
+docker pull ghcr.io/b0yko/pgwarden:0.1.1                            # the gateway (amd64, arm64)
 uvx --from git+https://github.com/B0yko/pgwarden pgwarden --help   # the CLI
 ```
 

@@ -15,7 +15,8 @@ FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4d
 LABEL org.opencontainers.image.title="pgwarden" \
       org.opencontainers.image.description="Governed Postgres access for AI assistants (MCP gateway)" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/B0yko/pgwarden"
+      org.opencontainers.image.source="https://github.com/B0yko/pgwarden" \
+      io.modelcontextprotocol.server.name="io.github.B0yko/pgwarden"
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 COPY --from=build /requirements.txt /tmp/requirements.txt
 COPY --from=build /dist/ /tmp/dist/
