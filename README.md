@@ -569,13 +569,14 @@ dark brand banners. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Directory listings
 
-pgwarden is listed in these third-party MCP directories:
+pgwarden is in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.B0yko/pgwarden)
+as `io.github.B0yko/pgwarden` (the OCI image), and in these third-party MCP directories:
 
 - [MCPServers.org](https://mcpservers.org/servers/b0yko/pgwarden)
 - [mcpHQ / awesome-mcp-servers](https://github.com/mcpHQ/awesome-mcp-servers#databases-and-storage)
 - [Glama](https://glama.ai/mcp/servers/@B0yko/pgwarden)
 
-These listings do not imply an official MCP Registry listing, a security audit or endorsement.
+These listings do not imply a security audit or endorsement.
 
 ## License
 
