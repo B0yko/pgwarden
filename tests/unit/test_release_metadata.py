@@ -69,3 +69,20 @@ def test_readme_pulls_this_release() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     tags = set(re.findall(r"ghcr\.io/b0yko/pgwarden:(\S+)", readme))
     assert tags == {_version()}
+
+
+def test_release_workflow_publishes_to_the_mcp_registry_after_the_image() -> None:
+    import yaml
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["mcp-registry"]
+    assert job["needs"] == "image"
+    assert job["permissions"]["id-token"] == "write"
+    assert re.fullmatch(r"v\d+\.\d+\.\d+", job["env"]["MCP_PUBLISHER_VERSION"])
+    assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["MCP_PUBLISHER_SHA256"])
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "sha256sum -c" in commands
+    assert "mcp-publisher login github-oidc" in commands
+    assert "mcp-publisher publish" in commands

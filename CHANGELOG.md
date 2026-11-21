@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
 
 - `server.json` for the official MCP Registry, and the image label
   `io.modelcontextprotocol.server.name` that the registry checks to verify the image.
+- The release workflow publishes `server.json` to the MCP Registry after the image push,
+  logging in with GitHub OIDC (no stored secret); `workflow_dispatch` on a tag re-publishes it.
 
 ### Security
 
