@@ -21,6 +21,9 @@ All notable changes to this project are documented here. The format follows
   (CVE-2026-126360, GHSA-xcq7-p3pf-p88h). `uv audit` reports no known vulnerabilities.
 - Raised the authlib requirement to >=1.9.1 so installs without the lockfile cannot
   resolve a version with these advisories.
+- Upgraded the development-only dependency pillow 12.3.0 to 13.0.0 (the advisories fixed
+  in 13.0.0, among them CVE-2026-112393 and CVE-2026-112396). Pillow is used by the
+  screenshot tooling and tests only and was never in the image or the package.
 
 ### Fixed
 
